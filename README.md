@@ -162,7 +162,7 @@ analyze_project, debug_control
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE.md](LICENSE.md) for details.
 
 ## MCP registry
 
