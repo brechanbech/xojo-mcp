@@ -83,7 +83,7 @@ MCP log):
 
 1. Start the Xojo IDE and open your project
 2. Start a Claude Code session in the project directory
-3. Claude will automatically discover the 23 xmcp tools and the usage guide
+3. Claude will automatically discover the 25 xmcp tools and the usage guide
 
 ### 4. Download Xojo documentation (recommended)
 
@@ -128,10 +128,11 @@ xmcp [OPTIONS]
 
 ## Differences from the original
 
-This is a drop-in replacement — all 22 original tools are preserved with
-identical names and parameters, plus one new tool (`estimate_request_cost`)
-for a total of 23. Same IDE Communicator Protocol v2 over the Unix domain
-socket, updated to MCP protocol version `2025-11-25`.
+This is a drop-in replacement — it exposes the same 25 tools as the original,
+with identical names and parameters (`analyze_project` and `debug_control` were
+the last two ported, bringing it to full parity). Same IDE Communicator
+Protocol v2 over the Unix domain socket, updated to MCP protocol version
+`2025-11-25`.
 
 Notable differences:
 
