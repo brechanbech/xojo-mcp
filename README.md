@@ -1,7 +1,5 @@
 # xmcp-rs
 
-<!-- mcp-name: io.github.brechanbech/xmcp -->
-
 An MCP (Model Context Protocol) server that gives AI assistants direct control
 over the Xojo IDE. Communicates via stdin/stdout JSON-RPC and forwards IDE
 commands via a Unix domain socket to the running Xojo IDE process.
@@ -165,3 +163,10 @@ analyze_project, debug_control
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
+
+## MCP registry
+
+Ownership-verification token for the [MCP registry](https://registry.modelcontextprotocol.io)
+(read from this crate's rendered README on crates.io):
+
+> Registry ownership token: `mcp-name: io.github.brechanbech/xmcp`
