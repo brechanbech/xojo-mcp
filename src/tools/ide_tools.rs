@@ -673,6 +673,107 @@ impl Tool for ConstantValue {
 }
 
 // ---------------------------------------------------------------------------
+// analyze_project
+// ---------------------------------------------------------------------------
+pub struct AnalyzeProject;
+
+impl Tool for AnalyzeProject {
+    fn name(&self) -> &'static str { "analyze_project" }
+    fn description(&self) -> &'static str {
+        "Analyzes the current Xojo project for compile errors and warnings without \
+         building. Reports unused variables, type mismatches, deprecated API usage, \
+         and other issues. Pass scope=\"item\" to analyze only the currently selected \
+         item (faster); default is \"project\" to analyze everything."
+    }
+    fn parameters(&self) -> &[ToolParam] {
+        static P: &[ToolParam] = &[ToolParam {
+            name: "scope",
+            param_type: ParamType::String,
+            description: "Scope to analyze: \"project\" (default) or \"item\" (currently selected item only).",
+            required: false,
+            default: None,
+        }];
+        P
+    }
+    fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        let scope = arg_str(args, "scope", "project").to_lowercase();
+        let command = if scope == "item" {
+            "CheckItemErrors"
+        } else {
+            "CheckProjectErrors"
+        };
+        let script = format!("DoCommand \"{command}\"\nPrint \"\"");
+        // Analysis can be slow on large projects; match upstream's 60s budget.
+        let result = ide_call(ctx, &script, Duration::from_secs(60));
+        if result.is_error {
+            return result;
+        }
+        parse_analyze_result(&result.output)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// debug_control
+// ---------------------------------------------------------------------------
+pub struct DebugControl;
+
+/// (public action name, Xojo IDE DoCommand) pairs for the debug session.
+const VALID_DEBUG_ACTIONS: &[(&str, &str)] = &[
+    ("step_over", "StepOver"),
+    ("step_into", "StepInto"),
+    ("step_out", "StepOut"),
+    ("resume", "Resume"),
+    ("pause", "Pause"),
+];
+
+impl Tool for DebugControl {
+    fn name(&self) -> &'static str { "debug_control" }
+    fn description(&self) -> &'static str {
+        "Controls the Xojo debug session. Actions: \"step_over\" (execute current \
+         line), \"step_into\" (step into method call), \"step_out\" (step out of \
+         current method), \"resume\" (continue running), \"pause\" (pause execution). \
+         Requires an active debug session started with run_project."
+    }
+    fn parameters(&self) -> &[ToolParam] {
+        static P: &[ToolParam] = &[ToolParam {
+            name: "action",
+            param_type: ParamType::String,
+            description: "Debug action to perform: \"step_over\", \"step_into\", \"step_out\", \"resume\", or \"pause\".",
+            required: true,
+            default: None,
+        }];
+        P
+    }
+    fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        let action = arg_str(args, "action", "").to_lowercase();
+        let command = match VALID_DEBUG_ACTIONS.iter().find(|entry| action == entry.0) {
+            Some(entry) => entry.1,
+            None => {
+                return ToolResult::failure(format!(
+                    "Unknown action: \"{action}\". Valid actions: step_over, step_into, step_out, resume, pause."
+                ));
+            }
+        };
+        let script = format!("DoCommand \"{command}\"\nPrint \"\"");
+        let result = ide_call_default(ctx, &script);
+        if result.is_error {
+            return result;
+        }
+        let trimmed = result.output.trim();
+        if trimmed.is_empty() {
+            return ToolResult::success(format!("Debug action \"{action}\" executed."));
+        }
+        // A buildError payload means the IDE rejected the command (e.g. no live session).
+        if let Ok(json) = serde_json::from_str::<Value>(trimmed)
+            && json.get("buildError").is_some()
+        {
+            return ToolResult::failure(format!("IDE error: {trimmed}"));
+        }
+        ToolResult::success(trimmed)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared helper: parse DoCommand result for build/run
 // ---------------------------------------------------------------------------
 fn parse_do_command_result(output: &str, success_msg: &str) -> ToolResult {
@@ -710,4 +811,134 @@ fn parse_do_command_result(output: &str, success_msg: &str) -> ToolResult {
 
     // If it's not JSON or doesn't have buildError, return as-is.
     ToolResult::success(trimmed)
+}
+
+// ---------------------------------------------------------------------------
+// Shared helper: parse CheckProjectErrors/CheckItemErrors result for analyze
+// ---------------------------------------------------------------------------
+
+/// Read a field of a JSON object as a display string. Strings are returned
+/// verbatim; numbers are stringified; null/missing yields "".
+fn json_field_str(obj: &Value, key: &str) -> String {
+    match obj.get(key) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// Format one error/warning entry as "Type: message [location] (position)".
+fn format_diagnostic(entry: &Value, default_type: &str) -> String {
+    let kind = {
+        let t = json_field_str(entry, "type");
+        if t.is_empty() { default_type.to_string() } else { t }
+    };
+    let msg = json_field_str(entry, "message");
+    let location = json_field_str(entry, "location");
+    let position = json_field_str(entry, "position");
+    let mut line = format!("{kind}: {msg}");
+    if !location.is_empty() {
+        line.push_str(&format!(" [{location}]"));
+    }
+    if !position.is_empty() && position != location {
+        line.push_str(&format!(" ({position})"));
+    }
+    line
+}
+
+fn parse_analyze_result(output: &str) -> ToolResult {
+    let trimmed = output.trim();
+    if trimmed.is_empty() || trimmed == "{}" {
+        return ToolResult::success("No errors or warnings found.");
+    }
+
+    let json: Value = match serde_json::from_str(trimmed) {
+        Ok(v) => v,
+        Err(_) => return ToolResult::failure(format!("Unexpected non-JSON response: {trimmed}")),
+    };
+
+    let build_error = match json.get("buildError") {
+        Some(be) => be,
+        None => return ToolResult::failure(format!("Unexpected response: {trimmed}")),
+    };
+
+    let mut lines = Vec::new();
+    let mut error_count = 0usize;
+    let mut warning_count = 0usize;
+
+    if let Some(errors) = build_error.get("errors").and_then(|e| e.as_array()) {
+        for err in errors {
+            lines.push(format_diagnostic(err, "Error"));
+            error_count += 1;
+        }
+    }
+    if let Some(warnings) = build_error.get("warnings").and_then(|w| w.as_array()) {
+        for w in warnings {
+            lines.push(format_diagnostic(w, "Warning"));
+            warning_count += 1;
+        }
+    }
+
+    if lines.is_empty() {
+        return ToolResult::success("No errors or warnings found.");
+    }
+
+    let mut summary = String::new();
+    if error_count > 0 {
+        summary.push_str(&format!("{error_count} error(s)"));
+    }
+    if warning_count > 0 {
+        if !summary.is_empty() {
+            summary.push_str(", ");
+        }
+        summary.push_str(&format!("{warning_count} warning(s)"));
+    }
+
+    let result = format!("Analysis results ({summary}):\n{}", lines.join("\n"));
+
+    // Errors fail the call; warnings-only is a success.
+    if error_count > 0 {
+        ToolResult::failure(result)
+    } else {
+        ToolResult::success(result)
+    }
+}
+
+#[cfg(test)]
+mod ide_tests {
+    use super::*;
+
+    #[test]
+    fn analyze_clean_project_is_success() {
+        let r = parse_analyze_result("");
+        assert!(!r.is_error);
+        assert_eq!(r.output, "No errors or warnings found.");
+        let r = parse_analyze_result("{}");
+        assert!(!r.is_error);
+    }
+
+    #[test]
+    fn analyze_errors_fail_with_summary() {
+        let payload = r#"{"buildError":{"errors":[{"type":"Error","message":"Type mismatch","location":"App.Foo","position":"12"}]}}"#;
+        let r = parse_analyze_result(payload);
+        assert!(r.is_error);
+        assert!(r.output.contains("1 error(s)"));
+        assert!(r.output.contains("Error: Type mismatch [App.Foo] (12)"));
+    }
+
+    #[test]
+    fn analyze_warnings_only_is_success() {
+        let payload = r#"{"buildError":{"warnings":[{"message":"Unused local","location":"App.Bar"}]}}"#;
+        let r = parse_analyze_result(payload);
+        assert!(!r.is_error);
+        assert!(r.output.contains("1 warning(s)"));
+        assert!(r.output.contains("Warning: Unused local [App.Bar]"));
+    }
+
+    #[test]
+    fn analyze_numeric_position_is_rendered() {
+        let payload = r#"{"buildError":{"errors":[{"message":"Bad","location":"X","position":7}]}}"#;
+        let r = parse_analyze_result(payload);
+        assert!(r.output.contains("(7)"));
+    }
 }

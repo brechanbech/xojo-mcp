@@ -148,12 +148,13 @@ Notable differences:
 
 ## Tools
 
-xmcp exposes 23 tools across four categories:
+xmcp exposes 25 tools across four categories:
 
-**IDE tools (17):** list_project_items, get_current_location, select_project_item,
+**IDE tools (19):** list_project_items, get_current_location, select_project_item,
 get_code, set_code, get_selected_text, set_selected_text, build_project,
 run_project, stop_project, create_project_item, run_ide_script, get_project_info,
-revert_project, save_project, get_item_description, constant_value
+revert_project, save_project, get_item_description, constant_value,
+analyze_project, debug_control
 
 **Documentation tools (3):** search_docs, lookup_class, list_doc_topics
 

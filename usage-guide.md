@@ -20,13 +20,15 @@ This file is automatically loaded as an MCP resource when you connect to xmcp. I
 
 ## What xmcp can do
 
-xmcp gives you direct control over the Xojo IDE via 23 tools:
+xmcp gives you direct control over the Xojo IDE via 25 tools:
 
 - **Navigate**: `list_project_items`, `get_current_location`, `select_project_item`
 - **Read/write code**: `get_code`, `set_code`, `get_selected_text`, `set_selected_text`
 - **Build and run**: `build_project`, `run_project`, `stop_project`
+- **Analyze**: `analyze_project` — compile-check the whole project or just the selected item without building
 - **Create items**: `create_project_item`
 - **Inspect and modify**: `get_item_description`, `constant_value`, `get_project_info`, `revert_project`, `save_project`
+- **Debug session control**: `debug_control` — step over/into/out, resume, pause during a `run_project` session
 - **IDE scripting**: `run_ide_script` (escape hatch for anything not covered)
 - **Documentation**: `search_docs`, `lookup_class`, `list_doc_topics` *(require local docs — see below)*
 - **Debugging**: `get_debug_log`, `get_system_log`
