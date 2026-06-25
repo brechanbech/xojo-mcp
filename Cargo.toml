@@ -1,13 +1,20 @@
 [package]
-name = "xmcp"
-version = "2.2.1"
+name = "xojo-mcp"
+version = "3.0.0"
 edition = "2024"
 license = "MIT"
 description = "MCP server for controlling the Xojo IDE"
-repository = "https://codeberg.org/brechanbech/xmcp-rs"
+repository = "https://codeberg.org/brechanbech/xojo-mcp"
 readme = "README.md"
 keywords = ["mcp", "xojo", "ai", "claude", "ide"]
 categories = ["development-tools", "command-line-utilities"]
+
+# Crate renamed from `xmcp` to `xojo-mcp` (X's own XMCP framework clashed with
+# the original Xojo XMCP this is a port of). The binary stays `xmcp` to avoid
+# breaking existing `claude mcp add` configs and muscle memory.
+[[bin]]
+name = "xmcp"
+path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

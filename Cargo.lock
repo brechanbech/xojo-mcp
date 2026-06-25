@@ -234,7 +234,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xmcp"
+name = "xojo-mcp"
 version = "2.2.1"
 dependencies = [
  "clap",

@@ -1,10 +1,15 @@
-# xmcp-rs
+# xojo-mcp
 
 An MCP (Model Context Protocol) server that gives AI assistants direct control
 over the Xojo IDE. Communicates via stdin/stdout JSON-RPC and forwards IDE
 commands via a Unix domain socket to the running Xojo IDE process.
 
-> **macOS only.** xmcp-rs talks to the Xojo IDE over its macOS-specific Unix
+> **Note on the name.** This crate was previously published as `xmcp`. It was
+> renamed to `xojo-mcp` to avoid confusion with X's (formerly Twitter)
+> unrelated `xmcp` framework. The installed **binary is still `xmcp`**, so
+> existing configs keep working.
+
+> **macOS only.** xojo-mcp talks to the Xojo IDE over its macOS-specific Unix
 > domain socket (`/tmp/XojoIDE`). Windows and Linux are not supported and there
 > is no plan to add support — the underlying IDE IPC mechanism doesn't exist
 > on those platforms.
@@ -20,8 +25,8 @@ is licensed under the MIT License.
 ### 1. Build and install
 
 ```sh
-git clone https://codeberg.org/brechanbech/xmcp-rs.git
-cd xmcp-rs
+git clone https://codeberg.org/brechanbech/xojo-mcp.git
+cd xojo-mcp
 cargo install --path .
 ```
 
@@ -170,4 +175,4 @@ MIT — see [LICENSE.md](LICENSE.md) for details.
 Ownership-verification token for the [MCP registry](https://registry.modelcontextprotocol.io)
 (read from this crate's rendered README on crates.io):
 
-> Registry ownership token: `mcp-name: io.github.brechanbech/xmcp`
+> Registry ownership token: `mcp-name: io.github.brechanbech/xojo-mcp`

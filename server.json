@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.brechanbech/xmcp",
+  "name": "io.github.brechanbech/xojo-mcp",
   "title": "Xojo IDE Control",
   "description": "MCP server for controlling the Xojo IDE on macOS",
-  "version": "2.2.1",
-  "websiteUrl": "https://codeberg.org/brechanbech/xmcp-rs",
+  "version": "3.0.0",
+  "websiteUrl": "https://codeberg.org/brechanbech/xojo-mcp",
   "repository": {
-    "url": "https://github.com/brechanbech/xmcp-rs",
+    "url": "https://github.com/brechanbech/xojo-mcp",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "cargo",
-      "identifier": "xmcp",
-      "version": "2.2.1",
+      "identifier": "xojo-mcp",
+      "version": "3.0.0",
       "transport": {
         "type": "stdio"
       }
