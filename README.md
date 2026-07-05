@@ -88,7 +88,7 @@ MCP log):
 
 1. Start the Xojo IDE and open your project
 2. Start a Claude Code session in the project directory
-3. Claude will automatically discover the 25 xmcp tools and the usage guide
+3. Claude will automatically discover the 26 xmcp tools and the usage guide
 
 ### 4. Download Xojo documentation (recommended)
 
@@ -188,11 +188,12 @@ flag or environment variable.)
 
 ### What it actually blocks
 
-Read-only mode disables the five tools that modify the project:
+Read-only mode disables the six tools that modify the project:
 
 | Tool | What it would otherwise do |
 | --- | --- |
 | `set_code` | Overwrite the code of a method, property, or other item |
+| `edit_code` | Replace an exact substring within an item's code |
 | `set_selected_text` | Replace the current text selection in the code editor |
 | `create_project_item` | Add a new class, module, window, or other item |
 | `revert_project` | Discard unsaved changes back to the last save |
@@ -215,11 +216,11 @@ The restriction is applied in two independent layers, so it holds even if a
 client or model misbehaves:
 
 1. **The blocked tools are removed from the tool list.** When the assistant asks
-   the server what tools exist (`tools/list`), the five mutating tools are
+   the server what tools exist (`tools/list`), the six mutating tools are
    filtered out. The model never sees them, so it cannot choose to call
    something it does not know exists. This is what makes the mode effective in
    practice rather than merely defensive.
-2. **Any call to a blocked tool is rejected.** If a request to one of the five
+2. **Any call to a blocked tool is rejected.** If a request to one of the six
    arrives anyway — a stale tool list, a hand-crafted call, a buggy client — the
    server refuses it before the request ever reaches the IDE, returning a clear
    error explaining that the tool is disabled in read-only mode.
@@ -262,15 +263,20 @@ xmcp [OPTIONS]
 
 ## Differences from the original
 
-This is a drop-in replacement — it exposes the same 25 tools as the original,
-with identical names and parameters (`analyze_project` and `debug_control` were
-the last two ported, bringing it to full parity). Same IDE Communicator
-Protocol v2 over the Unix domain socket, updated to MCP protocol version
-`2025-11-25`.
+This is a drop-in replacement — it exposes all 25 tools from the original with
+identical names and parameters (`analyze_project` and `debug_control` were the
+last two ported, bringing it to full parity), plus one new tool, `edit_code`,
+for 26 in total. Same IDE Communicator Protocol v2 over the Unix domain socket,
+updated to MCP protocol version `2025-11-25`.
 
 Notable differences:
 
 - **Binary name** is `xmcp`
+- **`edit_code` — targeted str_replace-style editing** — replaces an exact
+  substring within an item's code in one call (read → replace → write, all
+  server-side), instead of resending the whole item via `set_code`. The
+  original has no such tool, forcing whole-item rewrites or shell-based text
+  munging for small edits.
 - **Enforced read-only mode** — `--read-only` / `XMCP_READ_ONLY` removes and
   rejects the mutating tools at the server. The original has no built-in
   enforcement; it can only be asked, via the prompt, not to write. See
@@ -285,10 +291,10 @@ Notable differences:
 
 ## Tools
 
-xmcp exposes 25 tools across four categories:
+xmcp exposes 26 tools across four categories:
 
-**IDE tools (19):** list_project_items, get_current_location, select_project_item,
-get_code, set_code, get_selected_text, set_selected_text, build_project,
+**IDE tools (20):** list_project_items, get_current_location, select_project_item,
+get_code, set_code, edit_code, get_selected_text, set_selected_text, build_project,
 run_project, stop_project, create_project_item, run_ide_script, get_project_info,
 revert_project, save_project, get_item_description, constant_value,
 analyze_project, debug_control

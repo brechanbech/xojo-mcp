@@ -22,8 +22,8 @@ This file is automatically loaded as an MCP resource when you connect to xmcp. I
 
 xmcp may be running in **read-only mode** (started with `--read-only` or
 `XMCP_READ_ONLY=1`). When it is, the tools that modify the project —
-`set_code`, `set_selected_text`, `create_project_item`, `revert_project`, and
-`save_project` — are not listed and cannot be called. If you don't see those
+`set_code`, `edit_code`, `set_selected_text`, `create_project_item`,
+`revert_project`, and `save_project` — are not listed and cannot be called. If you don't see those
 tools, the user has intentionally opened the project for browsing, building,
 running, and analysis only. Do not try to work around this or ask the user to
 disable it unless they bring it up; help them within the read tools available.
@@ -32,10 +32,10 @@ disable it unless they bring it up; help them within the read tools available.
 
 ## What xmcp can do
 
-xmcp gives you direct control over the Xojo IDE via 25 tools:
+xmcp gives you direct control over the Xojo IDE via 26 tools:
 
 - **Navigate**: `list_project_items`, `get_current_location`, `select_project_item`
-- **Read/write code**: `get_code`, `set_code`, `get_selected_text`, `set_selected_text`
+- **Read/write code**: `get_code`, `set_code`, `edit_code`, `get_selected_text`, `set_selected_text`
 - **Build and run**: `build_project`, `run_project`, `stop_project`
 - **Analyze**: `analyze_project` — compile-check the whole project or just the selected item without building
 - **Create items**: `create_project_item`
@@ -114,9 +114,18 @@ Pick your approach based on what you're editing. Going down the wrong path alway
 
 | What you're editing | How to do it |
 | --- | --- |
-| Class / module / app-level code (`.xojo_code`) | `get_code` / `set_code` with dot-separated path |
+| A small change to existing class / module / app-level code | `edit_code` with a dot-separated `location` (preferred) |
+| Replacing a whole method / item body, or writing new code from scratch | `set_code` with dot-separated path |
 | Window event handlers (`Opening`, `Close`, `Resized`, etc.) | Edit `.xojo_window` file directly on disk |
 | Window layout, controls, or properties | Edit `.xojo_window` file directly on disk |
+
+**Prefer `edit_code` for edits to existing code.** It replaces an exact
+substring (`old_string` → `new_string`) in one call, so you don't have to
+`get_code` the whole item, reconstruct it, and `set_code` it back. `old_string`
+must match the current code exactly (whitespace and indentation included) and,
+unless you pass `replace_all: true`, must occur exactly once — add surrounding
+context to make it unique. Reach for `set_code` only when you're replacing an
+entire body or writing something new.
 
 **For window files: go straight to direct file editing — do not try IDE tools first.**
 

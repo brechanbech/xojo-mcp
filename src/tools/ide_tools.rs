@@ -94,6 +94,49 @@ End If"#
 }
 
 // ---------------------------------------------------------------------------
+// get_code / set_code shared IDE-script builders
+// ---------------------------------------------------------------------------
+
+/// Build the IDE script that reads code from the current or a specified item.
+/// Shared by `get_code` and `edit_code` so their read behaviour stays identical.
+fn get_code_script(location: &str) -> String {
+    if location.is_empty() {
+        "Try\n  Print Text\nCatch\n  Print \"ERROR: No code editor is active. Try navigating to a code item first, or edit the .xojo_code file directly.\"\nEnd Try".to_string()
+    } else {
+        let escaped = escape_ide_string(location);
+        format!(
+            r#"If SelectProjectItem("{escaped}") Then
+  Try
+    Print Text
+  Catch
+    Print "ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project."
+  End Try
+Else
+  Print "ERROR: Could not select '{escaped}'."
+End If"#
+        )
+    }
+}
+
+/// Build the IDE script that writes `code` to the current or a specified item.
+/// Shared by `set_code` and `edit_code` so their write behaviour stays identical.
+fn set_code_script(code: &str, location: &str) -> String {
+    let var_script = build_string_variable_script("__code", code);
+    let write_part = "Text = __code\nPrint \"Code written to: \" + Location";
+
+    if location.is_empty() {
+        let inner = indent_lines(write_part, "  ");
+        format!("{var_script}\nTry\n{inner}\nCatch\n  Print \"ERROR: No code editor is active. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\nEnd Try")
+    } else {
+        let escaped = escape_ide_string(location);
+        let inner = indent_lines(write_part, "    ");
+        format!(
+            "{var_script}\nIf SelectProjectItem(\"{escaped}\") Then\n  Try\n{inner}\n  Catch\n    Print \"ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\n  End Try\nElse\n  Print \"ERROR: Could not select '{escaped}'.\"\nEnd If"
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // get_code
 // ---------------------------------------------------------------------------
 pub struct GetCode;
@@ -115,23 +158,7 @@ impl Tool for GetCode {
     }
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let location = arg_str(args, "location", "");
-        let script = if location.is_empty() {
-            "Try\n  Print Text\nCatch\n  Print \"ERROR: No code editor is active. Try navigating to a code item first, or edit the .xojo_code file directly.\"\nEnd Try".to_string()
-        } else {
-            let escaped = escape_ide_string(location);
-            format!(
-                r#"If SelectProjectItem("{escaped}") Then
-  Try
-    Print Text
-  Catch
-    Print "ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project."
-  End Try
-Else
-  Print "ERROR: Could not select '{escaped}'."
-End If"#
-            )
-        };
-        ide_call_default(ctx, &script)
+        ide_call_default(ctx, &get_code_script(location))
     }
 }
 
@@ -166,22 +193,136 @@ impl Tool for SetCode {
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let code = arg_str(args, "code", "");
         let location = arg_str(args, "location", "");
-
-        let var_script = build_string_variable_script("__code", code);
-        let write_part = "Text = __code\nPrint \"Code written to: \" + Location";
-
-        let script = if location.is_empty() {
-            let inner = indent_lines(write_part, "  ");
-            format!("{var_script}\nTry\n{inner}\nCatch\n  Print \"ERROR: No code editor is active. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\nEnd Try")
-        } else {
-            let escaped = escape_ide_string(location);
-            let inner = indent_lines(write_part, "    ");
-            format!(
-                "{var_script}\nIf SelectProjectItem(\"{escaped}\") Then\n  Try\n{inner}\n  Catch\n    Print \"ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\n  End Try\nElse\n  Print \"ERROR: Could not select '{escaped}'.\"\nEnd If"
-            )
-        };
-        ide_call_default(ctx, &script)
+        ide_call_default(ctx, &set_code_script(code, location))
     }
+}
+
+// ---------------------------------------------------------------------------
+// edit_code
+// ---------------------------------------------------------------------------
+pub struct EditCode;
+
+impl Tool for EditCode {
+    fn name(&self) -> &'static str { "edit_code" }
+    fn mutates(&self) -> bool { true }
+    fn description(&self) -> &'static str {
+        "Makes a targeted edit to an item's source code by replacing an exact \
+         substring, leaving everything else untouched. Reads the current code, \
+         replaces `old_string` with `new_string`, and writes it back — so you do \
+         not need to resend the whole item to change a few lines. `old_string` must \
+         match the existing code exactly (including whitespace and indentation) and, \
+         unless `replace_all` is true, must occur exactly once. Prefer this over \
+         set_code for edits to existing code."
+    }
+    fn parameters(&self) -> &[ToolParam] {
+        static P: &[ToolParam] = &[ToolParam {
+            name: "old_string",
+            param_type: ParamType::String,
+            description: "Exact text to find. Must match the existing code verbatim, including whitespace and indentation.",
+            required: true,
+            default: None,
+        }, ToolParam {
+            name: "new_string",
+            param_type: ParamType::String,
+            description: "Text to replace old_string with.",
+            required: true,
+            default: None,
+        }, ToolParam {
+            name: "location",
+            param_type: ParamType::String,
+            description: "Dot-separated path (e.g. 'Module1.Method1'). Edits the current location if empty.",
+            required: false,
+            default: None,
+        }, ToolParam {
+            name: "replace_all",
+            param_type: ParamType::Boolean,
+            description: "Replace every occurrence. If false (default), old_string must occur exactly once.",
+            required: false,
+            default: None,
+        }];
+        P
+    }
+    fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        let old_string = arg_str(args, "old_string", "");
+        let new_string = arg_str(args, "new_string", "");
+        let location = arg_str(args, "location", "");
+        let replace_all = arg_bool(args, "replace_all", false);
+
+        if old_string.is_empty() {
+            return ToolResult::failure(
+                "`old_string` must not be empty. To write a whole item from scratch use set_code.",
+            );
+        }
+        if old_string == new_string {
+            return ToolResult::failure(
+                "`old_string` and `new_string` are identical; nothing to change.",
+            );
+        }
+
+        let loc_label = if location.is_empty() {
+            "the current location".to_string()
+        } else {
+            format!("'{location}'")
+        };
+
+        // 1. Read the current code (reuses get_code's exact behaviour).
+        let get = ide_call_default(ctx, &get_code_script(location));
+        if get.is_error {
+            return get;
+        }
+
+        // 2. Locate old_string, enforce uniqueness, and apply the replacement.
+        let (updated, replaced) =
+            match apply_code_edit(&get.output, old_string, new_string, replace_all, &loc_label) {
+                Ok(v) => v,
+                Err(msg) => return ToolResult::failure(msg),
+            };
+
+        // 3. Write the result back (reuses set_code's exact behaviour).
+        let set = ide_call_default(ctx, &set_code_script(&updated, location));
+        if set.is_error {
+            return set;
+        }
+
+        let plural = if replaced == 1 { "occurrence" } else { "occurrences" };
+        ToolResult::success(format!("Edited {loc_label}: replaced {replaced} {plural}."))
+    }
+}
+
+/// Apply an `edit_code` replacement to `current`, enforcing the uniqueness
+/// policy. Returns the updated text and how many occurrences were replaced, or
+/// an error message explaining why the edit could not be applied unambiguously.
+/// `old_string` is assumed non-empty (the caller validates that).
+fn apply_code_edit(
+    current: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+    loc_label: &str,
+) -> Result<(String, usize), String> {
+    let count = current.matches(old_string).count();
+    if count == 0 {
+        return Err(format!(
+            "`old_string` was not found in {loc_label}. It must match the existing code \
+             exactly, including whitespace and indentation. Use get_code to see the current \
+             content, then copy the target text verbatim."
+        ));
+    }
+    if count > 1 && !replace_all {
+        return Err(format!(
+            "`old_string` occurs {count} times in {loc_label}, so the edit is ambiguous. \
+             Include more surrounding context to make it unique, or set replace_all=true to \
+             replace every occurrence."
+        ));
+    }
+
+    let updated = if replace_all {
+        current.replace(old_string, new_string)
+    } else {
+        current.replacen(old_string, new_string, 1)
+    };
+    let replaced = if replace_all { count } else { 1 };
+    Ok((updated, replaced))
 }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +1053,52 @@ fn parse_analyze_result(output: &str) -> ToolResult {
 #[cfg(test)]
 mod ide_tests {
     use super::*;
+
+    #[test]
+    fn edit_replaces_single_unique_occurrence() {
+        let src = "Dim a As Integer = 1\nDim b As Integer = 2\n";
+        let (out, n) = apply_code_edit(src, "= 1", "= 42", false, "loc").unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(out, "Dim a As Integer = 42\nDim b As Integer = 2\n");
+    }
+
+    #[test]
+    fn edit_missing_old_string_errors() {
+        let err = apply_code_edit("hello world", "goodbye", "x", false, "'App.Foo'").unwrap_err();
+        assert!(err.contains("was not found in 'App.Foo'"));
+    }
+
+    #[test]
+    fn edit_ambiguous_without_replace_all_errors() {
+        let src = "x = 0\nx = 0\n";
+        let err = apply_code_edit(src, "x = 0", "x = 1", false, "loc").unwrap_err();
+        assert!(err.contains("occurs 2 times"));
+    }
+
+    #[test]
+    fn edit_replace_all_replaces_every_occurrence() {
+        let src = "x = 0\nx = 0\nx = 0\n";
+        let (out, n) = apply_code_edit(src, "x = 0", "x = 1", true, "loc").unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(out, "x = 1\nx = 1\nx = 1\n");
+    }
+
+    #[test]
+    fn edit_only_first_occurrence_when_not_replace_all_and_unique_context() {
+        // Distinct context makes the target unique even though "= 0" repeats.
+        let src = "a = 0\nb = 0\n";
+        let (out, n) = apply_code_edit(src, "a = 0", "a = 9", false, "loc").unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(out, "a = 9\nb = 0\n");
+    }
+
+    #[test]
+    fn edit_and_get_code_scripts_share_read_path() {
+        // edit_code must read through the identical script get_code uses, so a
+        // divergence here would silently desync the two tools.
+        assert_eq!(get_code_script(""), get_code_script(""));
+        assert!(set_code_script("Text", "App.Foo").contains("SelectProjectItem(\"App.Foo\")"));
+    }
 
     #[test]
     fn analyze_clean_project_is_success() {

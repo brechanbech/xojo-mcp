@@ -324,6 +324,7 @@ mod tests {
     /// The tools read-only mode must hide and reject.
     const MUTATING: &[&str] = &[
         "set_code",
+        "edit_code",
         "set_selected_text",
         "create_project_item",
         "revert_project",
