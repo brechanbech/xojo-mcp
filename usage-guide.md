@@ -263,6 +263,29 @@ If no build output is found, use this reliable fallback:
 | Built app with `UnhandledException` | Yes — via `get_debug_log` | `/tmp/xmcp_debug.log` |
 | Built app without `UnhandledException` | No | Nowhere — add the handler |
 
+### Tracing a running debug app — use System.DebugLog, not MessageBox
+
+To trace logic in a running app (values, recursion, which branch fired), the
+non-blocking path is:
+
+1. Instrument the code with `System.DebugLog("…")` calls at the points you want
+   to observe (via `edit_code` / `set_code`).
+2. `run_project`, then exercise the behaviour.
+3. Call `get_system_log` with `process_name` = `<AppName>.debug` to read the
+   output.
+
+**Do not reach for MessageBox** to diagnose. It blocks the UI thread, fires on
+every iteration of a loop or recursive call, and requires a human to dismiss
+each one — it derails exactly the kind of run you are trying to observe.
+`System.DebugLog` has none of those problems.
+
+`get_system_log` surfaces only `System.DebugLog` output, so **an empty result
+almost always means no `System.DebugLog` calls ran — not that logging is
+broken.** Instrument first, then query. If the app is clearly logging by some
+other means, `get_system_log` will now also surface the raw `log show` entries
+it found for the process (flagged as non-`System.DebugLog`), so you can see
+*something* rather than a bare "nothing found."
+
 ---
 
 ## Tips for working effectively with xmcp
