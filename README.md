@@ -114,6 +114,132 @@ scripts/update-xojo-docs.sh /path/to/docs
 xmcp --docs-path /path/to/docs
 ```
 
+## Read-only mode
+
+By default, an assistant connected to xmcp can change your project: it can
+rewrite code, create new items, save, and revert. That is the point of the tool
+— but it is not always what you want. If you only want an assistant to *look
+at* a project — read the code, build it, run it, analyse it, answer questions,
+consult the documentation — without any possibility of it modifying or
+overwriting your source, start the server in **read-only mode**.
+
+Read-only mode is enforced by the server itself, not by asking the assistant to
+behave. It is the single most important safety control in xmcp, so it is worth
+understanding exactly how it works.
+
+### Enabling it
+
+The simplest way is the `--read-only` flag on the launch command. In Claude
+Code:
+
+```sh
+claude mcp add xmcp -- xmcp --read-only
+```
+
+Or, in a Claude Code settings file (`~/.claude/settings.json`, or the
+project-level `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "xmcp": {
+      "command": "xmcp",
+      "args": ["--read-only"]
+    }
+  }
+}
+```
+
+If your MCP client prefers environment variables to command-line arguments, the
+variable `XMCP_READ_ONLY=1` does exactly the same thing. Accepted truthy values
+are `1`, `true`, `yes`, and `on` (case-insensitive):
+
+```json
+{
+  "mcpServers": {
+    "xmcp": {
+      "command": "xmcp",
+      "args": [],
+      "env": { "XMCP_READ_ONLY": "1" }
+    }
+  }
+}
+```
+
+If both the flag and the environment variable are present, either one enabling
+read-only mode is enough — there is no way to *disable* it from the other.
+
+### It is set at launch, not in the conversation
+
+This is the part newcomers most often get wrong. **You do not put the assistant
+into read-only mode by telling it to "stick to reading" in the chat.** A prompt
+is a request the model can forget, misinterpret, or be argued out of — and it
+does nothing at all if the model simply calls a write tool anyway. That is the
+weakness read-only mode exists to remove.
+
+Read-only mode is a property of *how the server was started*. You set it once,
+in your MCP client's configuration, before the session begins. From that point
+on, for the entire lifetime of that server process, the restriction holds
+regardless of anything typed into the conversation. Neither you nor the
+assistant can toggle it mid-session; to change modes you change the
+configuration and reconnect the server. (Restarting the server is required for a
+change to take effect — a server that is already running will not pick up a new
+flag or environment variable.)
+
+### What it actually blocks
+
+Read-only mode disables the five tools that modify the project:
+
+| Tool | What it would otherwise do |
+| --- | --- |
+| `set_code` | Overwrite the code of a method, property, or other item |
+| `set_selected_text` | Replace the current text selection in the code editor |
+| `create_project_item` | Add a new class, module, window, or other item |
+| `revert_project` | Discard unsaved changes back to the last save |
+| `save_project` | Write the project's current in-memory state to disk |
+
+Everything else remains fully available — navigating and listing items, reading
+code (`get_code`), building (`build_project`), running (`run_project`),
+stopping, compile-checking (`analyze_project`), inspecting descriptions and
+constants, the debug log tools, and all three documentation tools. In short:
+browse, build, run, and analyse — just no writing.
+
+Note that build and run are deliberately *not* blocked. They do not alter your
+source; they exercise it. `build_project` writes a compiled app into the build
+folder and `run_project` launches a debug session, but neither touches the
+project itself, so both are considered read-only-safe.
+
+### How the enforcement works
+
+The restriction is applied in two independent layers, so it holds even if a
+client or model misbehaves:
+
+1. **The blocked tools are removed from the tool list.** When the assistant asks
+   the server what tools exist (`tools/list`), the five mutating tools are
+   filtered out. The model never sees them, so it cannot choose to call
+   something it does not know exists. This is what makes the mode effective in
+   practice rather than merely defensive.
+2. **Any call to a blocked tool is rejected.** If a request to one of the five
+   arrives anyway — a stale tool list, a hand-crafted call, a buggy client — the
+   server refuses it before the request ever reaches the IDE, returning a clear
+   error explaining that the tool is disabled in read-only mode.
+
+The assistant is also told, via the embedded usage guide, that when it sees a
+reduced tool set the project is intentionally read-only and it should work
+within the available tools rather than trying to route around the restriction.
+
+### Running both modes at once
+
+Because the mode is fixed per server, you can register xmcp twice under
+different names and choose per task which one to point the assistant at — for
+example a normal `xmcp` for editing sessions and a separate `xmcp-ro` for
+review-only sessions:
+
+```sh
+claude mcp add xmcp    -- xmcp
+claude mcp add xmcp-ro -- xmcp --read-only
+```
+
 ## Requirements
 
 - macOS (the Xojo IDE IPC socket is macOS-specific)
@@ -126,6 +252,9 @@ xmcp --docs-path /path/to/docs
 xmcp [OPTIONS]
 ```
 
+- `--read-only` — Read-only mode: hide and reject every tool that modifies the
+  project. Can also be enabled with `XMCP_READ_ONLY=1`. See
+  [Read-only mode](#read-only-mode) for the full description.
 - `-v`, `--verbose` — Enable verbose logging to stderr
 - `-d`, `--docs-path <PATH>` — Path to Xojo documentation directory (auto-detected if omitted)
 - `-V`, `--version` — Print version
@@ -142,6 +271,10 @@ Protocol v2 over the Unix domain socket, updated to MCP protocol version
 Notable differences:
 
 - **Binary name** is `xmcp`
+- **Enforced read-only mode** — `--read-only` / `XMCP_READ_ONLY` removes and
+  rejects the mutating tools at the server. The original has no built-in
+  enforcement; it can only be asked, via the prompt, not to write. See
+  [Read-only mode](#read-only-mode).
 - **No Xojo license required** — builds with the standard Rust toolchain
 - **usage-guide.md has a compiled-in fallback** — the original fails silently
   if the file is missing next to the binary; the Rust version embeds a copy

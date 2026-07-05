@@ -1,6 +1,6 @@
 [package]
 name = "xojo-mcp"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 license = "MIT"
 description = "MCP server for controlling the Xojo IDE"

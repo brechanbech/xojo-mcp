@@ -142,6 +142,7 @@ pub struct SetCode;
 
 impl Tool for SetCode {
     fn name(&self) -> &'static str { "set_code" }
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Writes source code to the current or specified location in the Xojo IDE. \
          Replaces entire code content."
@@ -215,6 +216,7 @@ pub struct SetSelectedText;
 
 impl Tool for SetSelectedText {
     fn name(&self) -> &'static str { "set_selected_text" }
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Replaces the currently selected text in the Xojo IDE code editor with new text. \
          Can optionally set selection position first."
@@ -354,6 +356,7 @@ const VALID_ITEM_TYPES: &[&str] = &[
 
 impl Tool for CreateProjectItem {
     fn name(&self) -> &'static str { "create_project_item" }
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Creates a new project item in the Xojo IDE. First navigates to the target \
          location (if specified), then creates the item."
@@ -489,6 +492,7 @@ pub struct RevertProject;
 
 impl Tool for RevertProject {
     fn name(&self) -> &'static str { "revert_project" }
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Reverts the current Xojo project to the version saved on disk. \
          Use after modifying project files directly."
@@ -510,6 +514,7 @@ pub struct SaveProject;
 
 impl Tool for SaveProject {
     fn name(&self) -> &'static str { "save_project" }
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Saves the current Xojo project to disk via IDE scripting \
          (DoCommand \"SaveFile\")."

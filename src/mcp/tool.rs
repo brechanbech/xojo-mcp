@@ -81,6 +81,13 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &'static str;
     fn parameters(&self) -> &[ToolParam];
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult;
+
+    /// Whether this tool modifies the project (source code, items, or the
+    /// saved-on-disk state). Read-only mode hides and rejects these tools.
+    /// Defaults to `false`; mutating tools override it.
+    fn mutates(&self) -> bool {
+        false
+    }
 }
 
 /// Infer the ParamType from a serde_json::Value.

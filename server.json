@@ -3,7 +3,7 @@
   "name": "io.github.brechanbech/xojo-mcp",
   "title": "Xojo IDE Control",
   "description": "MCP server for controlling the Xojo IDE on macOS",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "websiteUrl": "https://codeberg.org/brechanbech/xojo-mcp",
   "repository": {
     "url": "https://github.com/brechanbech/xojo-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "cargo",
       "identifier": "xojo-mcp",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "transport": {
         "type": "stdio"
       }

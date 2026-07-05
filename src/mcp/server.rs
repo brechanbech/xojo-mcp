@@ -13,6 +13,7 @@ pub struct Server {
     docs_path: Option<PathBuf>,
     exe_dir: PathBuf,
     verbose: bool,
+    read_only: bool,
 }
 
 impl Server {
@@ -22,6 +23,7 @@ impl Server {
         docs_path: Option<PathBuf>,
         exe_dir: PathBuf,
         verbose: bool,
+        read_only: bool,
     ) -> Self {
         Self {
             tools,
@@ -29,7 +31,14 @@ impl Server {
             docs_path,
             exe_dir,
             verbose,
+            read_only,
         }
+    }
+
+    /// Whether a tool is hidden/blocked in the current mode. A mutating tool
+    /// is unavailable when the server is running read-only.
+    fn is_blocked(&self, tool: &dyn Tool) -> bool {
+        self.read_only && tool.mutates()
     }
 
     /// Run the stdin/stdout JSON-RPC loop. Does not return.
@@ -150,7 +159,12 @@ impl Server {
     }
 
     fn handle_tools_list(&self, id: &Value) -> JsonRpcResponse {
-        let tools: Vec<Value> = self.tools.iter().map(|t| tool_to_json(t.as_ref())).collect();
+        let tools: Vec<Value> = self
+            .tools
+            .iter()
+            .filter(|t| !self.is_blocked(t.as_ref()))
+            .map(|t| tool_to_json(t.as_ref()))
+            .collect();
         JsonRpcResponse::success(id.clone(), json!({ "tools": tools }))
     }
 
@@ -187,6 +201,17 @@ impl Server {
                 );
             }
         };
+
+        if self.is_blocked(tool.as_ref()) {
+            return JsonRpcResponse::error(
+                id.clone(),
+                ErrorCode::InvalidRequest,
+                format!(
+                    "The `{tool_name}` tool modifies the project and is disabled because \
+                     xmcp is running in read-only mode."
+                ),
+            );
+        }
 
         let arguments = match params.get("arguments") {
             Some(Value::Object(map)) => map
@@ -258,6 +283,18 @@ impl Server {
         }
     }
 
+    #[cfg(test)]
+    fn tools_list_names(&self) -> Vec<String> {
+        let resp = self.handle_tools_list(&Value::Null);
+        resp.result
+            .and_then(|r| r.get("tools").cloned())
+            .and_then(|t| t.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(String::from))
+            .collect()
+    }
+
     fn handle_notification(&self, method: &str, params: Option<&Value>) {
         if !self.verbose {
             return;
@@ -276,5 +313,79 @@ impl Server {
             "roots/list_changed" => eprintln!("`roots/list_changed` notification received."),
             _ => eprintln!("Unknown MCP client notification received."),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::protocol::{ErrorCode, JsonRpcRequest};
+
+    /// The tools read-only mode must hide and reject.
+    const MUTATING: &[&str] = &[
+        "set_code",
+        "set_selected_text",
+        "create_project_item",
+        "revert_project",
+        "save_project",
+    ];
+
+    fn server(read_only: bool) -> Server {
+        Server::new(
+            crate::tools::all_tools(),
+            None,
+            None,
+            PathBuf::from("."),
+            false,
+            read_only,
+        )
+    }
+
+    #[test]
+    fn read_write_mode_lists_all_tools() {
+        let names = server(false).tools_list_names();
+        assert_eq!(names.len(), crate::tools::all_tools().len());
+        for m in MUTATING {
+            assert!(names.contains(&m.to_string()), "{m} should be listed");
+        }
+    }
+
+    #[test]
+    fn read_only_mode_hides_exactly_the_mutating_tools() {
+        let names = server(true).tools_list_names();
+        assert_eq!(names.len(), crate::tools::all_tools().len() - MUTATING.len());
+        for m in MUTATING {
+            assert!(!names.contains(&m.to_string()), "{m} must be hidden");
+        }
+        // A read tool is still present.
+        assert!(names.contains(&"get_code".to_string()));
+    }
+
+    #[test]
+    fn read_only_mode_rejects_a_mutating_call() {
+        let req = JsonRpcRequest {
+            id: Some(json!(1)),
+            method: Some("tools/call".into()),
+            params: Some(json!({ "name": "set_code", "arguments": {} })),
+        };
+        let resp = server(true).handle_tools_call(&json!(1), &req);
+        let err = resp.error.expect("call should be rejected");
+        assert_eq!(err.code, ErrorCode::InvalidRequest as i32);
+        assert!(err.message.contains("read-only"));
+    }
+
+    #[test]
+    fn read_only_mode_allows_a_read_call_through() {
+        // No IDE is connected, so the call fails at the IDE layer — but it must
+        // get past the read-only gate rather than being rejected as blocked.
+        let req = JsonRpcRequest {
+            id: Some(json!(1)),
+            method: Some("tools/call".into()),
+            params: Some(json!({ "name": "get_code", "arguments": {} })),
+        };
+        let resp = server(true).handle_tools_call(&json!(1), &req);
+        // Success envelope with an isError tool result (IDE not connected),
+        // not a JSON-RPC error about read-only mode.
+        assert!(resp.error.is_none());
     }
 }

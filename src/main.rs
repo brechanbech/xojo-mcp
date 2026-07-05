@@ -16,10 +16,18 @@ struct Cli {
     /// Path to Xojo documentation directory (auto-detected if omitted)
     #[arg(short, long)]
     docs_path: Option<PathBuf>,
+
+    /// Read-only mode: hide and reject all tools that modify the project
+    /// (set_code, set_selected_text, create_project_item, revert_project,
+    /// save_project). Can also be enabled by setting XMCP_READ_ONLY=1.
+    #[arg(long)]
+    read_only: bool,
 }
 
 fn main() {
     let cli = Cli::parse();
+
+    let read_only = cli.read_only || env_flag("XMCP_READ_ONLY");
 
     let docs_path = cli.docs_path.or_else(detect_docs_path);
 
@@ -42,11 +50,32 @@ fn main() {
     let all_tools = tools::all_tools();
 
     if cli.verbose {
-        eprintln!("xmcp server configured with {} tools.", all_tools.len());
+        let active = all_tools.iter().filter(|t| !(read_only && t.mutates())).count();
+        if read_only {
+            eprintln!(
+                "xmcp server configured with {active} tools ({} mutating tools disabled by read-only mode).",
+                all_tools.len() - active
+            );
+        } else {
+            eprintln!("xmcp server configured with {active} tools.");
+        }
     }
 
-    let server = mcp::server::Server::new(all_tools, Some(ide), docs_path, exe_dir, cli.verbose);
+    let server =
+        mcp::server::Server::new(all_tools, Some(ide), docs_path, exe_dir, cli.verbose, read_only);
     server.run();
+}
+
+/// Returns true if the named environment variable is set to a truthy value
+/// (`1`, `true`, `yes`, `on`, case-insensitive). Unset or empty is false.
+fn env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
 }
 
 /// Auto-detect Xojo documentation path at
