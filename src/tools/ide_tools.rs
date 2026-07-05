@@ -302,6 +302,18 @@ fn apply_code_edit(
 ) -> Result<(String, usize), String> {
     let count = current.matches(old_string).count();
     if count == 0 {
+        // A common failure is retyping old_string with the wrong indentation:
+        // Xojo indents method bodies with tabs, and the raw file mixes tabs and
+        // spaces. If a match exists that differs only in whitespace, hand back
+        // the real text so the caller can retry in one shot instead of doing a
+        // separate get_code round-trip to hunt for the actual indentation.
+        if let Some(actual) = find_whitespace_insensitive_match(current, old_string) {
+            return Err(format!(
+                "`old_string` was not found in {loc_label} as written, but a match exists that \
+                 differs only in whitespace/indentation (Xojo indents method bodies with tabs). \
+                 Retry with exactly this text as old_string:\n\n{actual}"
+            ));
+        }
         return Err(format!(
             "`old_string` was not found in {loc_label}. It must match the existing code \
              exactly, including whitespace and indentation. Use get_code to see the current \
@@ -323,6 +335,40 @@ fn apply_code_edit(
     };
     let replaced = if replace_all { count } else { 1 };
     Ok((updated, replaced))
+}
+
+/// If `needle` matches a span of `haystack` ignoring all whitespace differences,
+/// return that span exactly as it appears in `haystack` (with its real
+/// whitespace). Used only to build a helpful error when an exact match fails —
+/// it never changes what gets replaced. Matching is case-sensitive; only
+/// whitespace (spaces, tabs, newlines) is ignored.
+fn find_whitespace_insensitive_match(haystack: &str, needle: &str) -> Option<String> {
+    let needle_ns: Vec<char> = needle.chars().filter(|c| !c.is_whitespace()).collect();
+    if needle_ns.is_empty() {
+        return None;
+    }
+    // Byte offset + char for each non-whitespace character in the haystack.
+    let hay_ns: Vec<(usize, char)> = haystack
+        .char_indices()
+        .filter(|(_, c)| !c.is_whitespace())
+        .collect();
+    if hay_ns.len() < needle_ns.len() {
+        return None;
+    }
+
+    for start in 0..=(hay_ns.len() - needle_ns.len()) {
+        if (0..needle_ns.len()).all(|k| hay_ns[start + k].1 == needle_ns[k]) {
+            // Extend back over the line's leading indentation (tabs/spaces, not
+            // across a newline) so the hint shows the real indentation — usually
+            // the thing the caller got wrong.
+            let first_byte = hay_ns[start].0;
+            let start_byte = haystack[..first_byte].trim_end_matches([' ', '\t']).len();
+            let (last_byte, last_char) = hay_ns[start + needle_ns.len() - 1];
+            let end_byte = last_byte + last_char.len_utf8();
+            return Some(haystack[start_byte..end_byte].to_string());
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,6 +1112,31 @@ mod ide_tests {
     fn edit_missing_old_string_errors() {
         let err = apply_code_edit("hello world", "goodbye", "x", false, "'App.Foo'").unwrap_err();
         assert!(err.contains("was not found in 'App.Foo'"));
+        // Genuinely absent text gets the plain error, not the whitespace hint.
+        assert!(!err.contains("differs only in whitespace"));
+    }
+
+    #[test]
+    fn edit_wrong_indentation_returns_actual_text_hint() {
+        // Real code is tab-indented; caller guessed spaces.
+        let src = "Sub Foo()\n\t\tDim x As Integer = 1\nEnd Sub";
+        let err = apply_code_edit(src, "  Dim x As Integer = 1", "  Dim x As Integer = 2", false, "loc")
+            .unwrap_err();
+        assert!(err.contains("differs only in whitespace/indentation"));
+        // The hint hands back the real span with its actual tab indentation.
+        assert!(err.contains("\t\tDim x As Integer = 1"));
+    }
+
+    #[test]
+    fn whitespace_insensitive_match_finds_real_span() {
+        let hay = "a = 1\n\tb   =\t2\nc = 3";
+        // Needle differs in whitespace throughout but matches b's line; the
+        // returned span includes that line's leading tab indentation.
+        assert_eq!(
+            find_whitespace_insensitive_match(hay, "b = 2"),
+            Some("\tb   =\t2".to_string())
+        );
+        assert_eq!(find_whitespace_insensitive_match(hay, "zzz"), None);
     }
 
     #[test]

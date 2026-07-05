@@ -127,6 +127,12 @@ unless you pass `replace_all: true`, must occur exactly once — add surrounding
 context to make it unique. Reach for `set_code` only when you're replacing an
 entire body or writing something new.
 
+Build `old_string` by **copying from `get_code` output verbatim** — do not
+retype it from memory. Xojo indents method bodies with tabs, so a retyped
+guess at the indentation will not match. If an edit fails, `edit_code` detects a
+whitespace-only-differing match and hands you back the real text to retry with,
+so copy that exactly rather than guessing again.
+
 **Window files cannot be edited through the IDE tools at all.** The IDE
 scripting API only exposes the active code editor's text, which reaches
 class/module/app-level code. It has no handle on window event handlers,
