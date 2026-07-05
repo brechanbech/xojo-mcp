@@ -127,7 +127,13 @@ unless you pass `replace_all: true`, must occur exactly once — add surrounding
 context to make it unique. Reach for `set_code` only when you're replacing an
 entire body or writing something new.
 
-**For window files: go straight to direct file editing — do not try IDE tools first.**
+**Window files cannot be edited through the IDE tools at all.** The IDE
+scripting API only exposes the active code editor's text, which reaches
+class/module/app-level code. It has no handle on window event handlers,
+controls, or layout — so `get_code`, `set_code`, `edit_code`, and
+`select_project_item` do not work on anything inside a `.xojo_window`. For those,
+go straight to direct file editing (below); do not waste calls trying the IDE
+tools first.
 
 ---
 
@@ -141,8 +147,22 @@ entire body or writing something new.
    - Window UI, controls, and event handlers → `<WindowName>.xojo_window`
    - Project manifest → `<ProjectName>.xojo_project` (XML — edit sparingly)
 
-3. **Edit the file**
-   `.xojo_code` and `.xojo_window` are plain text with `#tag` markers. Follow the existing structure exactly.
+3. **Edit the file — use your own editor, with exact-string edits**
+   Use your native file-editing tool (the same one you'd use to edit any source
+   file) to make a **targeted, exact-string replacement** in the file. Do **not**
+   shell out to `sed`, `awk`, Python, or other text-munging scripts to rewrite
+   the file — that is fragile and the most common way these edits go wrong. Read
+   the file, match the exact block you're changing, and replace just that block.
+
+   `.xojo_code` and `.xojo_window` are plain text with `#tag` markers. Follow the
+   existing structure exactly and change as little as possible:
+
+   - Keep every `#tag`/`#tag End…` block balanced and in its original order.
+   - **Never invent or alter the hex IDs** in a `.xojo_window` — they must stay
+     internally consistent, and fabricated IDs cause the IDE to crash. Only edit
+     the code inside existing blocks; do not hand-author new control definitions.
+   - Preserve indentation and the existing line structure verbatim outside your
+     change.
 
    Window event handlers go in `#tag WindowCode`:
 
@@ -174,13 +194,17 @@ The IDE's in-memory copy is authoritative while the project is open. This create
 
 The IDE scripting API can navigate to top-level items, classes, modules, and windows — but not to individual methods, properties, or event implementations.
 
-Use `get_code` / `set_code` with a full dot-separated path instead — these navigate automatically:
+For class-, module-, and app-level members, use `get_code` / `set_code` / `edit_code` with a full dot-separated path instead — these navigate automatically:
 
 ```text
-get_code(location: "Window1.Button1.Pressed")   ✓
-set_code(code: "...", location: "App.MyMethod") ✓
-select_project_item(item_path: "App.MyMethod")  ✗
+get_code(location: "App.MyMethod")                ✓
+edit_code(location: "Module1.Helper", ...)        ✓
+select_project_item(item_path: "App.MyMethod")    ✗  (cannot target a method)
 ```
+
+**Anything inside a window is the exception** — `Window1.Button1.Pressed`, other
+control code, and layout are not reachable by the IDE tools through *any* path.
+Edit the `.xojo_window` file directly (see "How to edit code" above).
 
 `list_project_items` also does not list events — only methods, properties, and constants appear as children.
 
