@@ -277,6 +277,12 @@ Notable differences:
   server-side), instead of resending the whole item via `set_code`. The
   original has no such tool, forcing whole-item rewrites or shell-based text
   munging for small edits.
+- **Writes code directly — no shell/base64 marshalling** — `set_code` and
+  `edit_code` send source straight through the IPC, with all IDE-script string
+  escaping (quotes, newlines, special characters) handled server-side. There is
+  no need to smuggle code across the bridge by hand — the base64
+  encode-on-agent / decode-on-Mac / run-via-shell workflow the original forces
+  for file edits simply does not exist here.
 - **Enforced read-only mode** — `--read-only` / `XMCP_READ_ONLY` removes and
   rejects the mutating tools at the server. The original has no built-in
   enforcement; it can only be asked, via the prompt, not to write. See
