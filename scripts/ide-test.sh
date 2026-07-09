@@ -43,7 +43,7 @@ guard result == 0 else { fputs("connect() failed: \(errno)\n", stderr); exit(1) 
 
 // Build payload: two NUL-delimited JSON frames.
 let proto = #"{"protocol":2}"#
-let escapedScript = String(data: try! JSONSerialization.data(withJSONObject: script), encoding: .utf8)!
+let escapedScript = String(data: try! JSONSerialization.data(withJSONObject: script, options: [.fragmentsAllowed]), encoding: .utf8)!
 let request = #"{"tag":"\#(tag)","script":\#(escapedScript)}"#
 var payload = Data()
 payload.append(proto.data(using: .utf8)!)
