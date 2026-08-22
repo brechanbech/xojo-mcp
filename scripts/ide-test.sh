@@ -3,7 +3,9 @@
 # Usage: scripts/ide-test.sh 'Print "hello"'
 set -e
 
-SOCKET="/tmp/XojoIDE"
+# Honour XOJO_IPCPATH the same way xmcp does, so this harness can be pointed at
+# a specific IDE instance when more than one is running.
+SOCKET="/tmp/${XOJO_IPCPATH:-XojoIDE}"
 TAG="test_$$"
 SCRIPT="$1"
 

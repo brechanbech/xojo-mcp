@@ -5,24 +5,79 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-const SOCKET_CANDIDATES: &[&str] = &["/tmp/XojoIDE", "/private/tmp/XojoIDE"];
+const DEFAULT_SOCKET_NAME: &str = "XojoIDE";
 const MAX_RETRIES: u32 = 5;
+
+/// Resolve the IPC socket file name.
+///
+/// The IDE appends `XojoIDE` — or the value of `XOJO_IPCPATH`, when set — to a
+/// temporary directory. `XOJO_IPCPATH` is how you talk to a specific instance
+/// when several IDEs run at once; set the same value in xmcp's environment.
+/// Xojo documents `a-z A-Z 0-9 _` as the only valid characters, so anything
+/// else falls back to the default rather than probing a path the IDE would
+/// never have created.
+fn socket_name() -> String {
+    resolve_socket_name(std::env::var("XOJO_IPCPATH").ok())
+}
+
+/// Pure form of [`socket_name`], split out so the validation rule is testable
+/// without touching the process environment.
+fn resolve_socket_name(raw: Option<String>) -> String {
+    match raw {
+        Some(name) if name.is_empty() => DEFAULT_SOCKET_NAME.to_string(),
+        Some(name) => {
+            if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                name
+            } else {
+                eprintln!(
+                    "xmcp: ignoring XOJO_IPCPATH={name:?} (only a-z A-Z 0-9 _ are valid); \
+                     using {DEFAULT_SOCKET_NAME}"
+                );
+                DEFAULT_SOCKET_NAME.to_string()
+            }
+        }
+        None => DEFAULT_SOCKET_NAME.to_string(),
+    }
+}
+
+/// Socket paths to try, in the IDE's own search order: `/tmp` first, then the
+/// system temporary directory (`SpecialFolder.Temporary`, i.e. `TMPDIR`) that
+/// the IDE falls back to when `/tmp` is not writable. `/private/tmp` is kept
+/// as an explicit candidate because it is what `/tmp` resolves to on macOS.
+fn socket_candidates() -> Vec<String> {
+    candidate_paths(&socket_name(), std::env::var_os("TMPDIR"))
+}
+
+/// Pure form of [`socket_candidates`], split out for testing.
+fn candidate_paths(name: &str, tmpdir: Option<std::ffi::OsString>) -> Vec<String> {
+    let mut paths = vec![format!("/tmp/{name}"), format!("/private/tmp/{name}")];
+
+    if let Some(tmpdir) = tmpdir.filter(|t| !t.is_empty()) {
+        paths.push(
+            std::path::Path::new(&tmpdir)
+                .join(name)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+
+    paths
+}
 
 /// Deduplicate socket paths by canonical path.
 /// On macOS, /tmp is a symlink to /private/tmp, so both candidates resolve
 /// to the same socket. Without deduplication we waste a full timeout cycle
 /// on what is effectively a second attempt at the same socket.
-fn unique_socket_paths() -> Vec<&'static str> {
+fn unique_socket_paths() -> Vec<String> {
     let mut seen = HashSet::new();
-    SOCKET_CANDIDATES
-        .iter()
+    socket_candidates()
+        .into_iter()
         .filter(|p| {
             let canonical = std::fs::canonicalize(p)
                 .map(|c| c.to_string_lossy().to_string())
-                .unwrap_or_else(|_| p.to_string());
+                .unwrap_or_else(|_| p.clone());
             seen.insert(canonical)
         })
-        .copied()
         .collect()
 }
 
@@ -222,7 +277,7 @@ impl Communicator {
 
 #[cfg(test)]
 mod tests {
-    use super::summarize_errors;
+    use super::{DEFAULT_SOCKET_NAME, candidate_paths, resolve_socket_name, summarize_errors};
 
     #[test]
     fn collapses_identical_errors() {
@@ -252,5 +307,50 @@ mod tests {
     fn empty_input_returns_empty_string() {
         let errs: Vec<String> = Vec::new();
         assert_eq!(summarize_errors(&errs), "");
+    }
+
+    #[test]
+    fn socket_name_defaults_without_xojo_ipcpath() {
+        assert_eq!(resolve_socket_name(None), DEFAULT_SOCKET_NAME);
+        assert_eq!(
+            resolve_socket_name(Some(String::new())),
+            DEFAULT_SOCKET_NAME
+        );
+    }
+
+    #[test]
+    fn socket_name_uses_valid_xojo_ipcpath() {
+        assert_eq!(
+            resolve_socket_name(Some("Xojo2026r2_1".into())),
+            "Xojo2026r2_1"
+        );
+    }
+
+    #[test]
+    fn socket_name_rejects_invalid_characters() {
+        // Xojo documents a-z A-Z 0-9 _ as the only valid characters, so a value
+        // with a separator or dot could never match a socket the IDE created.
+        for bad in ["../escape", "Xojo 2026", "Xojo2026r2.1"] {
+            assert_eq!(resolve_socket_name(Some(bad.into())), DEFAULT_SOCKET_NAME);
+        }
+    }
+
+    #[test]
+    fn candidates_cover_tmp_and_tmpdir() {
+        let paths = candidate_paths("XojoIDE", Some("/var/folders/xx/T/".into()));
+        assert_eq!(
+            paths,
+            vec![
+                "/tmp/XojoIDE".to_string(),
+                "/private/tmp/XojoIDE".to_string(),
+                "/var/folders/xx/T/XojoIDE".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn candidates_skip_empty_tmpdir() {
+        assert_eq!(candidate_paths("XojoIDE", None).len(), 2);
+        assert_eq!(candidate_paths("XojoIDE", Some("".into())).len(), 2);
     }
 }

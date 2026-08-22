@@ -8,6 +8,8 @@ This file is automatically loaded as an MCP resource when you connect to xmcp. I
 
 **xmcp cannot start Xojo IDE.** All tools communicate via a macOS domain socket (`/tmp/XojoIDE`) that Xojo IDE creates when it launches. If the IDE is not running, every tool call will fail with "IPC socket not found".
 
+If several Xojo IDEs are running side by side, each was started with its own `XOJO_IPCPATH` name and xmcp connects only to the instance whose name it was given in its own environment — so "IPC socket not found" from a session with multiple IDEs open usually means xmcp and the intended IDE disagree on that value, not that the IDE is down.
+
 **The user must:**
 
 1. Start Xojo IDE manually

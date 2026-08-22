@@ -10,9 +10,10 @@ commands via a Unix domain socket to the running Xojo IDE process.
 > existing configs keep working.
 
 > **macOS only.** xojo-mcp talks to the Xojo IDE over its macOS-specific Unix
-> domain socket (`/tmp/XojoIDE`). Windows and Linux are not supported and there
-> is no plan to add support — the underlying IDE IPC mechanism doesn't exist
-> on those platforms.
+> domain socket (`/tmp/XojoIDE`, or `/tmp/$XOJO_IPCPATH` — see
+> [Choosing which IDE to talk to](#choosing-which-ide-to-talk-to)). Windows and
+> Linux are not supported and there is no plan to add support — the underlying
+> IDE IPC mechanism doesn't exist on those platforms.
 
 ## Attribution
 
@@ -241,6 +242,40 @@ claude mcp add xmcp    -- xmcp
 claude mcp add xmcp-ro -- xmcp --read-only
 ```
 
+## Choosing which IDE to talk to
+
+The IDE listens on a socket whose path is a temporary directory plus the name
+`XojoIDE` — or the value of `XOJO_IPCPATH`, when that variable is set in the
+IDE's environment. Setting it to a unique name per instance is Xojo's supported
+way of running several IDEs (say, two releases side by side) and addressing each
+one independently:
+
+```sh
+env XOJO_IPCPATH=Xojo2026r2_1 "/Applications/Xojo 2026 Release 2.1/Xojo.app/Contents/MacOS/Xojo" &
+```
+
+xmcp must be given the same value, otherwise it connects to whichever instance
+owns the default `XojoIDE` socket:
+
+```json
+{
+  "mcpServers": {
+    "xmcp-2026r2-1": {
+      "command": "xmcp",
+      "args": [],
+      "env": { "XOJO_IPCPATH": "Xojo2026r2_1" }
+    }
+  }
+}
+```
+
+Only `a-z`, `A-Z`, `0-9` and `_` are valid in the name; xmcp ignores a value
+containing anything else (with a warning on stderr) and falls back to `XojoIDE`.
+Candidate directories are `/tmp` first — what the IDE itself prefers — then
+`$TMPDIR`, which is where the IDE falls back when `/tmp` is not writable.
+
+If you only ever run one IDE at a time, ignore all of this: the default works.
+
 ## Requirements
 
 - macOS (the Xojo IDE IPC socket is macOS-specific)
@@ -260,6 +295,10 @@ xmcp [OPTIONS]
 - `-d`, `--docs-path <PATH>` — Path to Xojo documentation directory (auto-detected if omitted)
 - `-V`, `--version` — Print version
 - `-h`, `--help` — Print help
+
+Environment: `XMCP_READ_ONLY` (see above) and `XOJO_IPCPATH`, which selects the
+IDE instance to connect to — see
+[Choosing which IDE to talk to](#choosing-which-ide-to-talk-to).
 
 ## Differences from the original
 
