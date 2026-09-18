@@ -40,8 +40,9 @@ xmcp gives you direct control over the Xojo IDE via 26 tools:
 - **Read/write code**: `get_code`, `set_code`, `edit_code`, `get_selected_text`, `set_selected_text`
 - **Build and run**: `build_project`, `run_project`, `stop_project`
 - **Analyze**: `analyze_project` — compile-check the whole project or just the selected item without building
-- **Create items**: `create_project_item`
+- **Create items**: `create_project_item`, then `set_declaration` to name and type it — `NewProperty` and `NewMethod` create a *blank, untyped* member, and `set_declaration` is the half that gives it a name, type, scope and parameters
 - **Inspect and modify**: `get_item_description`, `constant_value`, `get_project_info`, `revert_project`, `save_project`
+- **App and build settings**: `property_value` — reads and writes *framework* properties such as `App.OptimizationLevel`, `App.SupportsDarkMode` or `Window1.Title`. This is the supported way to change settings that live in the `.xojo_project` file, which must never be hand-edited. It cannot reach properties you added yourself, and it cannot address controls on a window (there is no `Window1.PushButton1.Caption`) — for control properties, edit the `.xojo_window` file directly and `revert_project`
 - **Debug session control**: `debug_control` — step over/into/out, resume, pause during a `run_project` session
 - **IDE scripting**: `run_ide_script` (escape hatch for anything not covered)
 - **Documentation**: `search_docs`, `lookup_class`, `list_doc_topics` *(require local docs — see below)*

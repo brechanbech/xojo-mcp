@@ -865,6 +865,168 @@ impl Tool for ConstantValue {
 }
 
 // ---------------------------------------------------------------------------
+// property_value
+// ---------------------------------------------------------------------------
+pub struct PropertyValue;
+
+impl Tool for PropertyValue {
+    fn name(&self) -> &'static str { "property_value" }
+    // A set is a project change; a get is not, but the tool is one tool, so it
+    // is gated as the more dangerous of the two.
+    fn mutates(&self) -> bool { true }
+    fn description(&self) -> &'static str {
+        "Gets or sets a FRAMEWORK property of a project item in the Xojo IDE — e.g. \
+         'App.OptimizationLevel', 'App.SupportsDarkMode', 'Window1.Title'. This is the \
+         supported way to change app and build settings, which otherwise live in the \
+         .xojo_project file that must never be hand-edited. \
+         IMPORTANT LIMITS: it reaches only properties that are part of the Xojo framework, \
+         NOT properties you added yourself, and it CANNOT address controls on a window \
+         (there is no 'Window1.PushButton1.Caption'). Values are always strings, even for \
+         numeric or boolean properties."
+    }
+    fn parameters(&self) -> &[ToolParam] {
+        static P: &[ToolParam] = &[ToolParam {
+            name: "name",
+            param_type: ParamType::String,
+            description: "Qualified property name, e.g. 'App.OptimizationLevel' or 'Window1.Title'. \
+                          A bare name applies to the currently selected project item.",
+            required: true,
+            default: None,
+        }, ToolParam {
+            name: "value",
+            param_type: ParamType::String,
+            description: "If provided, sets the property; if omitted, returns the current value. \
+                          Always a string — pass \"True\"/\"False\" for booleans, \"4\" for numbers.",
+            required: false,
+            default: None,
+        }];
+        P
+    }
+    fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        let name = arg_str(args, "name", "");
+        if name.trim().is_empty() {
+            return ToolResult::failure("A property `name` is required.");
+        }
+        let has_value = args.contains_key("value");
+        let escaped_name = escape_ide_string(name);
+
+        let script = if has_value {
+            let escaped_val = escape_ide_string(arg_str(args, "value", ""));
+            format!("PropertyValue(\"{escaped_name}\") = \"{escaped_val}\"\nPrint \"OK\"")
+        } else {
+            format!("Print PropertyValue(\"{escaped_name}\")")
+        };
+        ide_call_default(ctx, &script)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// set_declaration
+// ---------------------------------------------------------------------------
+pub struct SetDeclaration;
+
+/// IDE scope codes for `ChangeDeclaration`, which takes an integer rather than a
+/// name. Accepting the word and mapping it here keeps the magic number out of
+/// the caller's hands.
+fn scope_code(scope: &str) -> Option<u8> {
+    match scope.trim().to_ascii_lowercase().as_str() {
+        "" | "public" => Some(0),
+        "protected" => Some(1),
+        "private" => Some(2),
+        _ => None,
+    }
+}
+
+impl Tool for SetDeclaration {
+    fn name(&self) -> &'static str { "set_declaration" }
+    fn mutates(&self) -> bool { true }
+    fn description(&self) -> &'static str {
+        "Sets the name, type, scope and parameters of the CURRENT method or property in the \
+         Xojo IDE. This is the other half of create_project_item: DoCommand \"NewProperty\" \
+         creates a blank, untyped property, and this is what names and types it. \
+         NOTE the two argument meanings — for a METHOD, `parameters` is the parameter list \
+         ('x As Integer, y As Integer') and `data_type` is the return type; for a PROPERTY, \
+         `parameters` is the DEFAULT VALUE and `data_type` is the property's type."
+    }
+    fn parameters(&self) -> &[ToolParam] {
+        static P: &[ToolParam] = &[ToolParam {
+            name: "name",
+            param_type: ParamType::String,
+            description: "New name for the method or property",
+            required: true,
+            default: None,
+        }, ToolParam {
+            name: "data_type",
+            param_type: ParamType::String,
+            description: "For a property, its type ('String', 'Integer'). For a method, its \
+                          return type. Omit for a method that returns nothing.",
+            required: false,
+            default: None,
+        }, ToolParam {
+            name: "parameters",
+            param_type: ParamType::String,
+            description: "For a method, the parameter list ('x As Integer, y As Integer'). \
+                          For a property, the default value.",
+            required: false,
+            default: None,
+        }, ToolParam {
+            name: "scope",
+            param_type: ParamType::String,
+            description: "'Public' (default), 'Protected' or 'Private'",
+            required: false,
+            default: None,
+        }, ToolParam {
+            name: "implements",
+            param_type: ParamType::String,
+            description: "Interface member this implements, e.g. 'Readable.Read'",
+            required: false,
+            default: None,
+        }, ToolParam {
+            name: "location",
+            param_type: ParamType::String,
+            description: "Dot-separated path to select first (e.g. 'Window1.MyMethod'). Omit to \
+                          act on whatever is already current — which is what you want directly \
+                          after create_project_item.",
+            required: false,
+            default: None,
+        }];
+        P
+    }
+    fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        let name = arg_str(args, "name", "");
+        if name.trim().is_empty() {
+            return ToolResult::failure("A declaration `name` is required.");
+        }
+        let scope_raw = arg_str(args, "scope", "");
+        let Some(scope) = scope_code(scope_raw) else {
+            return ToolResult::failure(format!(
+                "Invalid scope '{scope_raw}'. Must be Public, Protected or Private."
+            ));
+        };
+
+        let escaped_name = escape_ide_string(name);
+        let escaped_params = escape_ide_string(arg_str(args, "parameters", ""));
+        let escaped_type = escape_ide_string(arg_str(args, "data_type", ""));
+        let escaped_impl = escape_ide_string(arg_str(args, "implements", ""));
+
+        let core = format!(
+            "ChangeDeclaration(\"{escaped_name}\", \"{escaped_params}\", \"{escaped_type}\", {scope}, \"{escaped_impl}\")\nPrint \"OK: \" + Location"
+        );
+
+        let location = arg_str(args, "location", "");
+        let script = if location.is_empty() {
+            core
+        } else {
+            let escaped_loc = escape_ide_string(location);
+            format!(
+                "If SelectProjectItem(\"{escaped_loc}\") Then\n  {core}\nElse\n  Print \"ERROR: Could not select '{escaped_loc}'.\"\nEnd If"
+            )
+        };
+        ide_call_default(ctx, &script)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // analyze_project
 // ---------------------------------------------------------------------------
 pub struct AnalyzeProject;
@@ -1203,5 +1365,36 @@ mod ide_tests {
         let payload = r#"{"buildError":{"errors":[{"message":"Bad","location":"X","position":7}]}}"#;
         let r = parse_analyze_result(payload);
         assert!(r.output.contains("(7)"));
+    }
+}
+
+#[cfg(test)]
+mod declaration_tests {
+    use super::*;
+
+    #[test]
+    fn scope_names_map_to_the_ide_codes() {
+        // The IDE takes an integer; these are the three it defines.
+        assert_eq!(scope_code("Public"), Some(0));
+        assert_eq!(scope_code("Protected"), Some(1));
+        assert_eq!(scope_code("Private"), Some(2));
+    }
+
+    #[test]
+    fn scope_is_case_insensitive_and_defaults_to_public() {
+        assert_eq!(scope_code("private"), Some(2));
+        assert_eq!(scope_code("PROTECTED"), Some(1));
+        assert_eq!(scope_code("  Public  "), Some(0));
+        // Omitted entirely: Public is the IDE's own default for a new member.
+        assert_eq!(scope_code(""), Some(0));
+    }
+
+    /// A bad scope must not silently become Public — that would quietly publish
+    /// a member the caller asked to keep private.
+    #[test]
+    fn an_unknown_scope_is_rejected_rather_than_defaulted() {
+        for bad in ["Internal", "friend", "0", "publik"] {
+            assert_eq!(scope_code(bad), None, "{bad} should be rejected");
+        }
     }
 }

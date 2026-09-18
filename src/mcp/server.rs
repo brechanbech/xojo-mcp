@@ -343,6 +343,8 @@ mod tests {
     const MUTATING: &[&str] = &[
         "set_code",
         "edit_code",
+        "property_value",
+        "set_declaration",
         "set_selected_text",
         "create_project_item",
         "revert_project",

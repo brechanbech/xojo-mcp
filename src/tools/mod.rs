@@ -31,6 +31,8 @@ pub fn all_tools() -> Vec<Box<dyn Tool>> {
         Box::new(ide_tools::SaveProject),
         Box::new(ide_tools::GetItemDescription),
         Box::new(ide_tools::ConstantValue),
+        Box::new(ide_tools::PropertyValue),
+        Box::new(ide_tools::SetDeclaration),
         Box::new(ide_tools::AnalyzeProject),
         Box::new(ide_tools::DebugControl),
         Box::new(doc_tools::SearchDocs::new()),

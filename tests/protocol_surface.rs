@@ -25,6 +25,8 @@ const SUPPORTED: &[&str] = &["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-
 const MUTATING: &[&str] = &[
     "set_code",
     "edit_code",
+    "property_value",
+    "set_declaration",
     "set_selected_text",
     "create_project_item",
     "revert_project",
