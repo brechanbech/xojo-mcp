@@ -23,7 +23,39 @@ is licensed under the MIT License.
 
 ## Quick start
 
-### 1. Build and install
+### 1. Install
+
+#### Option A: prebuilt binary (Apple Silicon)
+
+Each release carries an unsigned `aarch64-apple-darwin` tarball. Grab the
+latest from
+[Releases](https://codeberg.org/brechanbech/xojo-mcp/releases), verify it, and
+put the binary on your `PATH`:
+
+```sh
+tar xzf xmcp-*-aarch64-apple-darwin.tar.gz
+shasum -a 256 -c xmcp-*-aarch64-apple-darwin.tar.gz.sha256
+install -m 755 xmcp-*/xmcp ~/.cargo/bin/xmcp
+```
+
+Because the binary is neither signed nor notarized, Gatekeeper quarantines it
+on download. Clear the flag before the first run:
+
+```sh
+xattr -d com.apple.quarantine ~/.cargo/bin/xmcp
+```
+
+Intel Macs are not covered — build from source instead.
+
+#### Option B: from crates.io
+
+```sh
+cargo install xojo-mcp
+```
+
+The crate is `xojo-mcp`; the binary it installs is `xmcp`.
+
+#### Option C: from source
 
 ```sh
 git clone https://codeberg.org/brechanbech/xojo-mcp.git
