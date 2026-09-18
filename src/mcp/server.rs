@@ -125,7 +125,7 @@ impl Server {
         }
 
         match method {
-            "initialize" => Some(self.handle_initialize(id)),
+            "initialize" => Some(self.handle_initialize(id, request)),
             "tools/list" => Some(self.handle_tools_list(id)),
             "tools/call" => Some(self.handle_tools_call(id, request)),
             "resources/list" => Some(self.handle_resources_list(id)),
@@ -143,9 +143,27 @@ impl Server {
         }
     }
 
-    fn handle_initialize(&self, id: &Value) -> JsonRpcResponse {
+    fn handle_initialize(&self, id: &Value, request: &JsonRpcRequest) -> JsonRpcResponse {
+        let requested = request
+            .params
+            .as_ref()
+            .and_then(|p| p.get("protocolVersion"))
+            .and_then(|v| v.as_str());
+
+        let negotiated = negotiate_protocol_version(requested);
+
+        if self.verbose && requested != Some(negotiated) {
+            match requested {
+                Some(r) => eprintln!(
+                    "Client requested protocol {r}, which xmcp does not support; \
+                     offering {negotiated}."
+                ),
+                None => eprintln!("Client requested no protocol version; offering {negotiated}."),
+            }
+        }
+
         let result = json!({
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": negotiated,
             "capabilities": {
                 "tools": {},
                 "resources": {}
