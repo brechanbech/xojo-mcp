@@ -45,16 +45,41 @@ fn resolve_socket_name(raw: Option<String>) -> String {
 /// the IDE falls back to when `/tmp` is not writable. `/private/tmp` is kept
 /// as an explicit candidate because it is what `/tmp` resolves to on macOS.
 fn socket_candidates() -> Vec<String> {
-    candidate_paths(&socket_name(), std::env::var_os("TMPDIR"))
+    candidate_paths(
+        &socket_name(),
+        std::env::var_os("TMPDIR"),
+        std::env::var_os("HOME"),
+    )
 }
 
 /// Pure form of [`socket_candidates`], split out for testing.
-fn candidate_paths(name: &str, tmpdir: Option<std::ffi::OsString>) -> Vec<String> {
-    let mut paths = vec![format!("/tmp/{name}"), format!("/private/tmp/{name}")];
+///
+/// Xojo documents the socket path (2026r2.1, issue 68115) as the name appended
+/// to the first *writable* temporary directory, and the `IDECommunicator`
+/// example it ships probes a wider chain than the documentation describes:
+/// `/tmp`, `/var/tmp`, `SpecialFolder.Temporary`, then the home folder. We probe
+/// all of it. An IDE that settled on a rung we would not have picked is still
+/// reachable, and a rung that holds no socket costs one `exists` check.
+///
+/// `/private/tmp` is here because `/tmp` is a symlink to it on macOS; both
+/// resolve to the same socket and [`unique_socket_paths`] drops the duplicate.
+fn candidate_paths(
+    name: &str,
+    tmpdir: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> Vec<String> {
+    let mut paths = vec![
+        format!("/tmp/{name}"),
+        format!("/private/tmp/{name}"),
+        format!("/var/tmp/{name}"),
+    ];
 
-    if let Some(tmpdir) = tmpdir.filter(|t| !t.is_empty()) {
+    for dir in [tmpdir, home].into_iter().flatten() {
+        if dir.is_empty() {
+            continue;
+        }
         paths.push(
-            std::path::Path::new(&tmpdir)
+            std::path::Path::new(&dir)
                 .join(name)
                 .to_string_lossy()
                 .into_owned(),
@@ -430,21 +455,32 @@ mod tests {
     }
 
     #[test]
-    fn candidates_cover_tmp_and_tmpdir() {
-        let paths = candidate_paths("XojoIDE", Some("/var/folders/xx/T/".into()));
+    fn candidates_cover_the_documented_chain_in_order() {
+        let paths = candidate_paths(
+            "XojoIDE",
+            Some("/var/folders/xx/T/".into()),
+            Some("/Users/someone".into()),
+        );
         assert_eq!(
             paths,
             vec![
                 "/tmp/XojoIDE".to_string(),
                 "/private/tmp/XojoIDE".to_string(),
+                "/var/tmp/XojoIDE".to_string(),
                 "/var/folders/xx/T/XojoIDE".to_string(),
+                "/Users/someone/XojoIDE".to_string(),
             ]
         );
     }
 
     #[test]
-    fn candidates_skip_empty_tmpdir() {
-        assert_eq!(candidate_paths("XojoIDE", None).len(), 2);
-        assert_eq!(candidate_paths("XojoIDE", Some("".into())).len(), 2);
+    fn candidates_skip_unset_and_empty_env() {
+        // The three fixed rungs remain; an unset or empty variable adds nothing
+        // rather than contributing a path rooted at the working directory.
+        assert_eq!(candidate_paths("XojoIDE", None, None).len(), 3);
+        assert_eq!(
+            candidate_paths("XojoIDE", Some("".into()), Some("".into())).len(),
+            3
+        );
     }
 }

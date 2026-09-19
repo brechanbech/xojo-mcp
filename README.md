@@ -160,7 +160,7 @@ MCP log):
 
 1. Start the Xojo IDE and open your project
 2. Start a Claude Code session in the project directory
-3. Claude will automatically discover the 26 xmcp tools and the usage guide
+3. Claude will automatically discover the 28 xmcp tools and the usage guide
 
 ### 4. Download Xojo documentation (recommended)
 
@@ -178,6 +178,18 @@ goes into `~/Library/Application Support/Xojo/Xojo/<version>/Documentation/`,
 which xmcp auto-detects at startup. Re-run the script periodically to pick up
 documentation updates — Xojo refreshes these files when new releases are
 published.
+
+`lookup_class` returns a shaped summary by default: the class description plus
+its member tables, with Sphinx cross-reference markup resolved to plain text.
+That is a few thousand characters where the raw page runs to tens of thousands
+— `String` alone is over 70,000. Ask for one member with `member`, or the
+unprocessed page with `full: true`:
+
+```
+lookup_class(class_name: "String")                     # description + member tables
+lookup_class(class_name: "String", member: "Middle")   # that member's entry alone
+lookup_class(class_name: "String", full: true)         # the raw .rst.txt page
+```
 
 To use a custom location instead:
 

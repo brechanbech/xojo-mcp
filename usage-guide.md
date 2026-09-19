@@ -63,7 +63,7 @@ This downloads `llms.txt` and `llms-full.txt` from `docs.xojo.com` into the auto
 
 - `search_docs` — keyword search across the full documentation (`llms-full.txt`)
 - `list_doc_topics` — browse/filter the topic index (`llms.txt`)
-- `lookup_class` — look up a specific class by name from individual `_sources/*.rst.txt` files (fast, targeted reads)
+- `lookup_class` — look up a specific class by name from individual `_sources/*.rst.txt` files (fast, targeted reads). By default it returns the page's description plus its member tables, with Sphinx cross-reference markup resolved to plain text — a few thousand characters rather than the tens of thousands the raw page holds. Pass `member` for a single member's entry (`lookup_class(class_name: "String", member: "Middle")`), which is what to reach for once you know the name you want. Pass `full: true` only if the shaped output seems to have dropped something: the raw page for `String` is over 70,000 characters of reStructuredText and will consume the context it lands in.
 
 ---
 
