@@ -27,15 +27,32 @@ is licensed under the MIT License.
 
 #### Option A: prebuilt binary (Apple Silicon)
 
-Each release carries a signed and notarized `aarch64-apple-darwin` tarball.
-Grab the latest from
-[Releases](https://codeberg.org/brechanbech/xojo-mcp/releases), verify it, and
-put the binary on your `PATH`:
+Each release carries an `aarch64-apple-darwin` tarball that is signed with a
+Developer ID certificate, notarized by Apple, and accompanied by a detached
+[minisign](https://jedisct1.github.io/minisign/) signature. Grab the latest from
+[Releases](https://codeberg.org/brechanbech/xojo-mcp/releases), check it, and put
+the binary on your `PATH`:
 
 ```sh
+minisign -Vm xmcp-*-aarch64-apple-darwin.tar.gz \
+    -P RWR7Jy43Mphvu+jrP2FynfYpR7WdP0PvQaSFKfXub7q9Sh7fjtyAX9GU
 tar xzf xmcp-*-aarch64-apple-darwin.tar.gz
-shasum -a 256 -c xmcp-*-aarch64-apple-darwin.tar.gz.sha256
 install -m 755 xmcp-*/xmcp ~/.cargo/bin/xmcp
+```
+
+The `.minisig` is the check worth doing, and the one the `.sha256` beside it
+cannot do: a checksum file hosted next to the file it vouches for proves only
+that the download wasn't corrupted, since anyone able to replace one asset can
+replace both. The signature is made by a key that never touches the release
+server — the one in the command above, kept in this repository as
+`minisign.pub`.
+
+`minisign` is in MacPorts (`port install minisign`). A successful verify prints
+the trusted comment, which names the version and the date it was signed. The
+`.sha256` is still published for anyone who wants it:
+
+```sh
+shasum -a 256 -c xmcp-*-aarch64-apple-darwin.tar.gz.sha256
 ```
 
 The binary is signed with a Developer ID certificate and notarized by Apple, so

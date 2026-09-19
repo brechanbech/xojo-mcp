@@ -31,6 +31,12 @@ TAG=""
 SIGN_IDENTITY="${XMCP_SIGN_IDENTITY:-Developer ID Application: Metrakol, LLC (CGYN4PNM9S)}"
 NOTARY_PROFILE="${XMCP_NOTARY_PROFILE:-xojo-mcp}"
 
+# The detached signature over the tarball, which is a separate claim from Apple's.
+# Notarization says Apple scanned this binary; the minisign signature says this
+# tarball is the one we published — which the .sha256 beside it cannot, sitting as
+# it does on the same server as the file it vouches for.
+MINISIGN_KEY="${XMCP_MINISIGN_KEY:-$HOME/.minisign/xojo-mcp.key}"
+
 usage() {
     sed -n '2,19p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
 }
@@ -106,6 +112,28 @@ if [ "$UNSIGNED" -eq 0 ]; then
         echo "         $SIGN_IDENTITY" >&2
         echo "       Check 'security find-identity -v -p codesigning', set" >&2
         echo "       XMCP_SIGN_IDENTITY, or pass --unsigned." >&2
+        exit 1
+    fi
+
+    if ! command -v minisign >/dev/null 2>&1; then
+        echo "Error: minisign is not installed (port install minisign), and the" >&2
+        echo "       tarball signature is not optional. Pass --unsigned to skip." >&2
+        exit 1
+    fi
+    if [ ! -r "$MINISIGN_KEY" ]; then
+        echo "Error: no minisign secret key at $MINISIGN_KEY." >&2
+        echo "       Generate one with:" >&2
+        echo "         minisign -G -W -p ~/.minisign/xojo-mcp.pub \\" >&2
+        echo "             -s ~/.minisign/xojo-mcp.key" >&2
+        echo "       or point XMCP_MINISIGN_KEY at an existing one." >&2
+        exit 1
+    fi
+    # Verifying our own signature before shipping it is the only way to catch a
+    # key/pubkey mismatch here rather than in a user's terminal.
+    if [ ! -r "${MINISIGN_KEY%.key}.pub" ]; then
+        echo "Error: no matching public key at ${MINISIGN_KEY%.key}.pub." >&2
+        echo "       It sits beside the secret key and the script verifies" >&2
+        echo "       against it before handing the tarball over." >&2
         exit 1
     fi
 fi
@@ -210,6 +238,19 @@ tar -C "$stage" -czf "$tarball" "$pkg"
 echo "  → $tarball ($(du -h "$tarball" | cut -f1 | tr -d ' '))"
 echo "  → $tarball.sha256"
 
+# The signature covers the finished tarball, so it comes last. -t is the trusted
+# comment: minisign signs it too and prints it on a successful verify, which makes
+# it the one place a version can be asserted rather than merely believed.
+if [ "$UNSIGNED" -eq 1 ]; then
+    echo "Skipping the tarball signature (--unsigned)."
+else
+    minisign -Sm "$tarball" -s "$MINISIGN_KEY" \
+        -c "xojo-mcp $version for $TARGET" \
+        -t "xojo-mcp $version $TARGET, signed $(date -u '+%Y-%m-%d')"
+    minisign -Vm "$tarball" -p "${MINISIGN_KEY%.key}.pub" >/dev/null
+    echo "  → $tarball.minisig"
+fi
+
 # ── Where to take it from here ──────────────────────────────────────────────
 # Publishing goes through the forgejo MCP server, so print the calls rather than
 # make them. Forgejo keeps same-named assets side by side instead of replacing,
@@ -223,3 +264,4 @@ echo "  get_release           $slug $TAG            → the release id"
 echo "  delete_release_asset  any same-named asset already attached"
 echo "  upload_release_asset  $tarball"
 echo "  upload_release_asset  $tarball.sha256"
+echo "  upload_release_asset  $tarball.minisig"
