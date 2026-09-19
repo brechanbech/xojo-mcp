@@ -32,7 +32,7 @@ SIGN_IDENTITY="${XMCP_SIGN_IDENTITY:-Developer ID Application: Metrakol, LLC (CG
 NOTARY_PROFILE="${XMCP_NOTARY_PROFILE:-xojo-mcp}"
 
 usage() {
-    sed -n '2,18p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
+    sed -n '2,19p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
 }
 
 for arg in "$@"; do
