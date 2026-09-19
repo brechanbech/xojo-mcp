@@ -81,12 +81,46 @@ fn unique_socket_paths() -> Vec<String> {
         .collect()
 }
 
-/// Classify whether an error is transient and worth retrying.
-fn is_retryable(err: &str) -> bool {
-    err.contains("not found")
-        || err.contains("Connection refused")
-        || err.contains("(timeout)")
-        || err.contains("connection closed")
+/// Why one attempt at one socket failed, and whether the script reached the IDE.
+///
+/// The flag is the whole reason this is a type rather than a string. A failure
+/// *before* the payload is written can be retried safely, because nothing ran.
+/// Once the bytes are on the wire the IDE is executing them, and silence
+/// afterwards says only that we did not hear the answer back -- resending would
+/// run the command a second time. For a read that is merely wasteful; for
+/// `set_code`, `create_project_item` or a build it is a duplicated edit.
+struct AttemptError {
+    message: String,
+    /// True from the moment writing *begins*, not once it completes. A partial
+    /// write leaves an incomplete frame that the IDE will not execute, so
+    /// erring this way costs at most one retry we could have had -- against the
+    /// far worse failure of repeating a command that did run.
+    script_sent: bool,
+}
+
+impl AttemptError {
+    /// A failure that happened before anything was sent.
+    fn before_send(message: String) -> Self {
+        Self {
+            message,
+            script_sent: false,
+        }
+    }
+
+    /// A failure after the script was handed to the socket.
+    fn after_send(message: String) -> Self {
+        Self {
+            message,
+            script_sent: true,
+        }
+    }
+
+    /// Worth another attempt? Only when nothing ran *and* the cause looks
+    /// transient -- in practice an IDE that has not finished starting up.
+    fn is_retryable(&self) -> bool {
+        !self.script_sent
+            && (self.message.contains("not found") || self.message.contains("Connection refused"))
+    }
 }
 
 /// Exponential backoff between retry attempts: 100, 200, 400, 800 ms ...
@@ -171,8 +205,15 @@ impl Communicator {
                         return Ok(response);
                     }
                     Err(e) => {
-                        last_error_retryable = is_retryable(&e);
-                        all_errors.push(e);
+                        let sent = e.script_sent;
+                        last_error_retryable = e.is_retryable();
+                        all_errors.push(e.message);
+                        if sent {
+                            // Something accepted the script. Moving to the next
+                            // candidate would hand the same command to a second
+                            // IDE; retrying would hand it to this one twice.
+                            break;
+                        }
                     }
                 }
             }
@@ -192,9 +233,10 @@ impl Communicator {
         payload: &[u8],
         tag: &str,
         timeout: Duration,
-    ) -> Result<Value, String> {
-        let mut stream = UnixStream::connect(path)
-            .map_err(|e| format!("IPCSocket connect failed at {path}: {e}"))?;
+    ) -> Result<Value, AttemptError> {
+        let mut stream = UnixStream::connect(path).map_err(|e| {
+            AttemptError::before_send(format!("IPCSocket connect failed at {path}: {e}"))
+        })?;
 
         stream
             .set_read_timeout(Some(Duration::from_millis(100)))
@@ -202,10 +244,10 @@ impl Communicator {
 
         stream
             .write_all(payload)
-            .map_err(|e| format!("IPCSocket write failed: {e}"))?;
+            .map_err(|e| AttemptError::after_send(format!("IPCSocket write failed: {e}")))?;
         stream
             .flush()
-            .map_err(|e| format!("IPCSocket flush failed: {e}"))?;
+            .map_err(|e| AttemptError::after_send(format!("IPCSocket flush failed: {e}")))?;
 
         // Read response frames until we find one with our tag.
         let deadline = Instant::now() + timeout;
@@ -215,12 +257,16 @@ impl Communicator {
 
         loop {
             if Instant::now() >= deadline {
-                return Err(format!("No IPCSocket response from {path} (timeout)"));
+                return Err(AttemptError::after_send(format!(
+                    "No IPCSocket response from {path} (timeout)"
+                )));
             }
 
             match stream.read(&mut read_buf) {
                 Ok(0) => {
-                    return Err(format!("IPCSocket connection closed by {path}"));
+                    return Err(AttemptError::after_send(format!(
+                        "IPCSocket connection closed by {path}"
+                    )));
                 }
                 Ok(n) => {
                     buffer.extend_from_slice(&read_buf[..n]);
@@ -229,7 +275,9 @@ impl Communicator {
                     continue;
                 }
                 Err(e) => {
-                    return Err(format!("IPCSocket read failed: {e}"));
+                    return Err(AttemptError::after_send(format!(
+                        "IPCSocket read failed: {e}"
+                    )));
                 }
             }
 
@@ -238,7 +286,7 @@ impl Communicator {
             while let Some(rel_pos) = buffer[cursor..].iter().position(|&b| b == 0) {
                 let frame_end = cursor + rel_pos;
                 let frame_str = std::str::from_utf8(&buffer[cursor..frame_end])
-                    .map_err(|e| format!("Invalid UTF-8 in IPC frame: {e}"))?
+                    .map_err(|e| AttemptError::after_send(format!("Invalid UTF-8 in IPC frame: {e}")))?
                     .trim();
                 cursor = frame_end + 1;
 
@@ -251,7 +299,7 @@ impl Communicator {
                 }
 
                 let response: Value = serde_json::from_str(frame_str)
-                    .map_err(|e| format!("Invalid JSON in IPC frame: {e}"))?;
+                    .map_err(|e| AttemptError::after_send(format!("Invalid JSON in IPC frame: {e}")))?;
 
                 if response.get("tag").and_then(|t| t.as_str()) == Some(tag) {
                     return Ok(response);
@@ -277,7 +325,53 @@ impl Communicator {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SOCKET_NAME, candidate_paths, resolve_socket_name, summarize_errors};
+    use super::{
+        AttemptError, DEFAULT_SOCKET_NAME, candidate_paths, resolve_socket_name, summarize_errors,
+    };
+
+    #[test]
+    fn a_script_already_sent_is_never_retried() {
+        // The message deliberately looks transient. It must not matter: the IDE
+        // has the script, so a resend would run the command twice.
+        for message in [
+            "No IPCSocket response from /tmp/XojoIDE (timeout)",
+            "IPCSocket connection closed by /tmp/XojoIDE",
+            "IPCSocket read failed: not found",
+        ] {
+            let err = AttemptError::after_send(message.to_owned());
+            assert!(
+                !err.is_retryable(),
+                "post-send error was treated as retryable: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_transient_failure_before_sending_is_retried() {
+        // Nothing ran, and the IDE may still be starting up.
+        assert!(
+            AttemptError::before_send("IPC socket not found at: /tmp/XojoIDE".to_owned())
+                .is_retryable()
+        );
+        assert!(
+            AttemptError::before_send(
+                "IPCSocket connect failed at /tmp/XojoIDE: Connection refused".to_owned()
+            )
+            .is_retryable()
+        );
+    }
+
+    #[test]
+    fn a_permanent_failure_before_sending_is_not_retried() {
+        // A stale socket from a crashed IDE, or a permission problem: retrying
+        // only delays an error that will not go away.
+        assert!(
+            !AttemptError::before_send(
+                "IPCSocket connect failed at /tmp/XojoIDE: Permission denied".to_owned()
+            )
+            .is_retryable()
+        );
+    }
 
     #[test]
     fn collapses_identical_errors() {

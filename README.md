@@ -9,11 +9,19 @@ commands via a Unix domain socket to the running Xojo IDE process.
 > unrelated `xmcp` framework. The installed **binary is still `xmcp`**, so
 > existing configs keep working.
 
-> **macOS only.** xojo-mcp talks to the Xojo IDE over its macOS-specific Unix
-> domain socket (`/tmp/XojoIDE`, or `/tmp/$XOJO_IPCPATH` — see
-> [Choosing which IDE to talk to](#choosing-which-ide-to-talk-to)). Windows and
-> Linux are not supported and there is no plan to add support — the underlying
-> IDE IPC mechanism doesn't exist on those platforms.
+> **macOS only.** xojo-mcp talks to the Xojo IDE over a Unix domain socket
+> (`/tmp/XojoIDE`, or `/tmp/$XOJO_IPCPATH` — see
+> [Choosing which IDE to talk to](#choosing-which-ide-to-talk-to)). Windows is
+> not supported and there is no plan to add it. The reason is not that the IDE
+> lacks an IPC mechanism there: Xojo's `IPCSocket` is a framework abstraction,
+> and on Windows it is a localhost TCP socket whose port is derived from the path
+> string rather than a filesystem entry. The original
+> [XMCP](https://github.com/o3jvind/XMCP), being itself a Xojo application, gets
+> that transport for free from the framework; this port speaks the wire protocol
+> directly, so Windows would mean reverse-engineering an undocumented
+> path-to-port derivation. Linux is untested rather than ruled out — it uses a
+> Unix socket as macOS does, but the debug- and system-log tools read macOS-only
+> sources.
 
 ## Attribution
 
