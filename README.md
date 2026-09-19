@@ -27,8 +27,8 @@ is licensed under the MIT License.
 
 #### Option A: prebuilt binary (Apple Silicon)
 
-Each release carries an unsigned `aarch64-apple-darwin` tarball. Grab the
-latest from
+Each release carries a signed and notarized `aarch64-apple-darwin` tarball.
+Grab the latest from
 [Releases](https://codeberg.org/brechanbech/xojo-mcp/releases), verify it, and
 put the binary on your `PATH`:
 
@@ -38,8 +38,18 @@ shasum -a 256 -c xmcp-*-aarch64-apple-darwin.tar.gz.sha256
 install -m 755 xmcp-*/xmcp ~/.cargo/bin/xmcp
 ```
 
-Because the binary is neither signed nor notarized, Gatekeeper quarantines it
-on download. Clear the flag before the first run:
+The binary is signed with a Developer ID certificate and notarized by Apple, so
+Gatekeeper lets it run as-is. Check that for yourself if you like:
+
+```sh
+codesign -dvv ~/.cargo/bin/xmcp        # Authority: Developer ID Application …
+spctl -a -vv -t exec ~/.cargo/bin/xmcp # accepted, source=Notarized Developer ID
+```
+
+A notarization ticket cannot be stapled to a bare executable — `stapler` only
+handles `.app`, `.dmg` and `.pkg` — so the *first* run needs to reach Apple to
+resolve the ticket. If that first run has to happen offline, clear the
+quarantine flag by hand instead:
 
 ```sh
 xattr -d com.apple.quarantine ~/.cargo/bin/xmcp

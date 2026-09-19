@@ -1,31 +1,45 @@
 #!/bin/sh
-# Build the aarch64-apple-darwin release binary and publish it as an asset on
-# the canonical Codeberg release. Codeberg's hosted Actions runners are Linux
-# only, so the macOS build happens here, on an Apple Silicon Mac, rather than
-# in CI.
+# Build the aarch64-apple-darwin release binary, sign and notarize it, and
+# publish it as an asset on the canonical Codeberg release. Codeberg's hosted
+# Actions runners are Linux only, so the macOS build happens here, on an Apple
+# Silicon Mac, rather than in CI.
 #
 # Usage:
 #   scripts/release-binary.sh              # release the version in Cargo.toml
 #   scripts/release-binary.sh v3.3.1       # release an explicit tag
 #   scripts/release-binary.sh --dry-run    # build and package, upload nothing
+#   scripts/release-binary.sh --unsigned   # skip signing and notarization
 #
 # Needs CODEBERG_TOKEN (or FORGEJO_TOKEN) holding a token with repository write
 # access, unless --dry-run is given. Re-running for the same tag is safe: the
 # release is reused and assets of the same name are replaced.
+#
+# Signing needs the Developer ID Application identity in the login keychain and
+# a stored notarytool profile; override either with XMCP_SIGN_IDENTITY and
+# XMCP_NOTARY_PROFILE. Notarization talks to Apple and takes a minute or two.
 
 set -e
 
 TARGET="aarch64-apple-darwin"
 DRY_RUN=0
+UNSIGNED=0
 TAG=""
 
+# Overridable so a renamed notarytool profile, or a move to another team, needs
+# no edit here. The profile is stored once, and outlives this script:
+#   xcrun notarytool store-credentials xojo-mcp \
+#       --apple-id <apple-id> --team-id CGYN4PNM9S
+SIGN_IDENTITY="${XMCP_SIGN_IDENTITY:-Developer ID Application: Metrakol, LLC (CGYN4PNM9S)}"
+NOTARY_PROFILE="${XMCP_NOTARY_PROFILE:-xojo-mcp}"
+
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
+    sed -n '2,19p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
 }
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=1 ;;
+        --unsigned) UNSIGNED=1 ;;
         -h|--help) usage; exit 0 ;;
         v*) TAG="$arg" ;;
         *)
@@ -86,6 +100,18 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse "$TAG^{commit}")" ]; then
     echo "Note: HEAD is ahead of $TAG, but only in files outside the binary."
 fi
 
+# Developer ID certificates expire, and a release build is a tedious way to
+# discover that, so check the identity is usable before building anything.
+if [ "$UNSIGNED" -eq 0 ]; then
+    if ! security find-identity -v -p codesigning | grep -qF "$SIGN_IDENTITY"; then
+        echo "Error: signing identity not in the keychain:" >&2
+        echo "         $SIGN_IDENTITY" >&2
+        echo "       Check 'security find-identity -v -p codesigning', set" >&2
+        echo "       XMCP_SIGN_IDENTITY, or pass --unsigned." >&2
+        exit 1
+    fi
+fi
+
 # ── Build ───────────────────────────────────────────────────────────────────
 
 echo "Building $TARGET (release)..."
@@ -116,6 +142,61 @@ if [ "$archs" != "arm64" ]; then
     exit 1
 fi
 echo "  stripped: $(du -h "$stage/$pkg/xmcp" | cut -f1 | tr -d ' ') ($archs)"
+
+# ── Sign and notarize ───────────────────────────────────────────────────────
+# Signing comes after strip, because stripping rewrites the Mach-O and would
+# invalidate a signature applied before it. --timestamp is what keeps the
+# signature valid once the certificate expires; --options runtime (hardened
+# runtime) is a precondition for notarization.
+
+if [ "$UNSIGNED" -eq 1 ]; then
+    echo "Skipping signing and notarization (--unsigned)."
+else
+    echo "Signing as $SIGN_IDENTITY..."
+    codesign --force --timestamp --options runtime \
+        --sign "$SIGN_IDENTITY" "$stage/$pkg/xmcp"
+    codesign --verify --strict "$stage/$pkg/xmcp"
+
+    # notarytool accepts .zip, .pkg and .dmg but never .tar.gz, so submit a
+    # throwaway ditto zip of the same staged directory. Apple documents ditto
+    # as the archiver to use here; other zip tools can mangle the Mach-O.
+    echo "Notarizing (this talks to Apple and takes a minute or two)..."
+    ditto -c -k --keepParent "$stage/$pkg" "$stage/notarize.zip"
+
+    log="$stage/notarytool.out"
+    set +e
+    xcrun notarytool submit "$stage/notarize.zip" \
+        --keychain-profile "$NOTARY_PROFILE" --wait >"$log" 2>&1
+    rc=$?
+    set -e
+    sed 's/^/  /' "$log"
+
+    # Trust the reported status rather than the exit code alone: a submission
+    # that comes back Invalid is a failure even where notarytool exits 0.
+    if [ $rc -ne 0 ] || ! grep -q "status: Accepted" "$log"; then
+        submission=$(sed -n 's/^ *id: *\([0-9a-f-][0-9a-f-]*\).*/\1/p' "$log" | head -1)
+        echo "Error: notarization did not succeed." >&2
+        if [ -n "$submission" ]; then
+            echo "       For the rejection details run:" >&2
+            echo "       xcrun notarytool log $submission \\" >&2
+            echo "           --keychain-profile $NOTARY_PROFILE" >&2
+        fi
+        exit 1
+    fi
+    rm "$stage/notarize.zip" "$log"
+
+    # A ticket cannot be stapled to a bare executable -- stapler handles only
+    # .app, .dmg and .pkg -- so a user's Mac resolves this one online on first
+    # run. spctl performs that same assessment, which makes it the closest
+    # check available to what they will actually experience.
+    if spctl -a -vv -t exec "$stage/$pkg/xmcp" 2>&1 | grep -q "Notarized Developer ID"; then
+        echo "  notarized: Gatekeeper accepts it"
+    else
+        echo "  Warning: spctl does not report a notarized binary yet." >&2
+        echo "           Ticket propagation can lag by a few minutes; re-check" >&2
+        echo "           before announcing the release." >&2
+    fi
+fi
 
 mkdir -p dist
 tarball="dist/$pkg.tar.gz"
