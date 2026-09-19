@@ -42,9 +42,13 @@ The binary is signed with a Developer ID certificate and notarized by Apple, so
 Gatekeeper lets it run as-is. Check that for yourself if you like:
 
 ```sh
-codesign -dvv ~/.cargo/bin/xmcp        # Authority: Developer ID Application …
-spctl -a -vv -t exec ~/.cargo/bin/xmcp # accepted, source=Notarized Developer ID
+codesign -dvv ~/.cargo/bin/xmcp   # Authority: Developer ID Application …
+codesign -vvv -R="notarized" --check-notarization ~/.cargo/bin/xmcp
 ```
+
+(`spctl` is the obvious thing to reach for and the wrong tool here: it answers
+`does not seem to be an app` for any plain command-line binary, notarized or
+not.)
 
 A notarization ticket cannot be stapled to a bare executable — `stapler` only
 handles `.app`, `.dmg` and `.pkg` — so the *first* run needs to reach Apple to

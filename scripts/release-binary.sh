@@ -187,14 +187,20 @@ else
 
     # A ticket cannot be stapled to a bare executable -- stapler handles only
     # .app, .dmg and .pkg -- so a user's Mac resolves this one online on first
-    # run. spctl performs that same assessment, which makes it the closest
-    # check available to what they will actually experience.
-    if spctl -a -vv -t exec "$stage/$pkg/xmcp" 2>&1 | grep -q "Notarized Developer ID"; then
-        echo "  notarized: Gatekeeper accepts it"
+    # run. spctl is no help in checking that: it answers "does not seem to be
+    # an app" for any plain executable whatever its notarization status. The
+    # "notarized" code requirement is the check that does work, and it makes
+    # the same online lookup the user's Mac will make.
+    if codesign -vvv -R="notarized" --check-notarization "$stage/$pkg/xmcp" \
+        >/dev/null 2>&1; then
+        echo "  notarized: ticket resolves, Gatekeeper will accept it"
     else
-        echo "  Warning: spctl does not report a notarized binary yet." >&2
-        echo "           Ticket propagation can lag by a few minutes; re-check" >&2
-        echo "           before announcing the release." >&2
+        echo "Error: signed, notarized as Accepted, but the ticket does not" >&2
+        echo "       resolve yet -- usually propagation lag. Re-check with:" >&2
+        echo "       codesign -vvv -R=\"notarized\" --check-notarization \\" >&2
+        echo "           <binary>" >&2
+        echo "       then re-run; refusing to package an unverifiable build." >&2
+        exit 1
     fi
 fi
 
