@@ -58,6 +58,30 @@ Print loc + " (" + typ + ")""#;
 }
 
 // ---------------------------------------------------------------------------
+// Navigating to a location
+// ---------------------------------------------------------------------------
+
+/// Wrap `body` so it runs only once the IDE is at `location`, printing an
+/// error otherwise. `location` must already be escaped for an IDE string.
+///
+/// Xojo 2026r3 narrowed `SelectProjectItem` to project items: it returns False
+/// for a member such as `App.Method1`, which earlier releases selected. Members
+/// are reached by assigning `Location` instead, which every supported release
+/// documents. That assignment ignores a path that does not exist and leaves the
+/// IDE wherever it was, so the result is read back before anything runs --
+/// without that, a mistyped path would hand `body` the previously open method.
+/// Top-level items stay with `SelectProjectItem`, because assigning `App` reads
+/// back as the member last open inside it and could never compare equal.
+fn at_location_script(location: &str, body: &str) -> String {
+    let inner = indent_lines(body, "  ");
+    format!(
+        "Dim __selected As Boolean = SelectProjectItem(\"{location}\")\n\
+         If Not __selected Then\n  Location = \"{location}\"\n  __selected = (Location = \"{location}\")\nEnd If\n\
+         If __selected Then\n{inner}\nElse\n  Print \"ERROR: Could not select '{location}'.\"\nEnd If"
+    )
+}
+
+// ---------------------------------------------------------------------------
 // select_project_item
 // ---------------------------------------------------------------------------
 pub struct SelectProjectItem;
@@ -81,13 +105,9 @@ impl Tool for SelectProjectItem {
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let path = arg_str(args, "item_path", "");
         let escaped = escape_ide_string(path);
-        let script = format!(
-            r#"Dim result As Boolean = SelectProjectItem("{escaped}")
-If result Then
-  Print "Selected: " + Location + " (" + TypeOfCurrentLocation + ")"
-Else
-  Print "ERROR: Could not select '{escaped}'. Method-level items auto-navigate when using get_code/set_code. For window event handlers, edit the .xojo_window file directly and use revert_project."
-End If"#
+        let script = at_location_script(
+            &escaped,
+            "Print \"Selected: \" + Location + \" (\" + TypeOfCurrentLocation + \")\"",
         );
         ide_call_default(ctx, &script)
     }
@@ -104,16 +124,11 @@ fn get_code_script(location: &str) -> String {
         "Try\n  Print Text\nCatch\n  Print \"ERROR: No code editor is active. Try navigating to a code item first, or edit the .xojo_code file directly.\"\nEnd Try".to_string()
     } else {
         let escaped = escape_ide_string(location);
-        format!(
-            r#"If SelectProjectItem("{escaped}") Then
-  Try
-    Print Text
-  Catch
-    Print "ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project."
-  End Try
-Else
-  Print "ERROR: Could not select '{escaped}'."
-End If"#
+        at_location_script(
+            &escaped,
+            &format!(
+                "Try\n  Print Text\nCatch\n  Print \"ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\nEnd Try"
+            ),
         )
     }
 }
@@ -129,10 +144,11 @@ fn set_code_script(code: &str, location: &str) -> String {
         format!("{var_script}\nTry\n{inner}\nCatch\n  Print \"ERROR: No code editor is active. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\nEnd Try")
     } else {
         let escaped = escape_ide_string(location);
-        let inner = indent_lines(write_part, "    ");
-        format!(
-            "{var_script}\nIf SelectProjectItem(\"{escaped}\") Then\n  Try\n{inner}\n  Catch\n    Print \"ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\n  End Try\nElse\n  Print \"ERROR: Could not select '{escaped}'.\"\nEnd If"
-        )
+        let inner = indent_lines(write_part, "  ");
+        let body = format!(
+            "Try\n{inner}\nCatch\n  Print \"ERROR: No code editor is active for '{escaped}'. If this is a window event handler, edit the .xojo_window file directly and use revert_project.\"\nEnd Try"
+        );
+        format!("{var_script}\n{}", at_location_script(&escaped, &body))
     }
 }
 
@@ -585,8 +601,9 @@ impl Tool for CreateProjectItem {
             )
         } else {
             let escaped = escape_ide_string(parent);
-            format!(
-                "If SelectProjectItem(\"{escaped}\") Then\n  DoCommand \"{item_type}\"\n  Print \"Created {item_type} at: \" + Location\nElse\n  Print \"ERROR: Could not select '{escaped}'.\"\nEnd If"
+            at_location_script(
+                &escaped,
+                &format!("DoCommand \"{item_type}\"\nPrint \"Created {item_type} at: \" + Location"),
             )
         };
         ide_call_default(ctx, &script)
@@ -813,9 +830,7 @@ impl Tool for GetItemDescription {
             core
         } else {
             let escaped_loc = escape_ide_string(location);
-            format!(
-                "If SelectProjectItem(\"{escaped_loc}\") Then\n  {core}\nElse\n  Print \"ERROR: Could not select '{escaped_loc}'.\"\nEnd If"
-            )
+            at_location_script(&escaped_loc, &core)
         };
         ide_call_default(ctx, &script)
     }
@@ -1018,9 +1033,7 @@ impl Tool for SetDeclaration {
             core
         } else {
             let escaped_loc = escape_ide_string(location);
-            format!(
-                "If SelectProjectItem(\"{escaped_loc}\") Then\n  {core}\nElse\n  Print \"ERROR: Could not select '{escaped_loc}'.\"\nEnd If"
-            )
+            at_location_script(&escaped_loc, &core)
         };
         ide_call_default(ctx, &script)
     }
@@ -1331,6 +1344,18 @@ mod ide_tests {
         // divergence here would silently desync the two tools.
         assert_eq!(get_code_script(""), get_code_script(""));
         assert!(set_code_script("Text", "App.Foo").contains("SelectProjectItem(\"App.Foo\")"));
+    }
+
+    #[test]
+    fn location_fallback_is_read_back_before_the_body_runs() {
+        // 2026r3 ignores a Location assignment to a missing path, so the body
+        // must be gated on the read-back, never on the assignment alone.
+        let s = at_location_script("App.Foo", "Text = x");
+        let assign = s.find("Location = \"App.Foo\"\n").unwrap();
+        let check = s.find("__selected = (Location = \"App.Foo\")").unwrap();
+        let body = s.find("Text = x").unwrap();
+        assert!(assign < check && check < body);
+        assert!(s.contains("If __selected Then\n  Text = x\nElse"));
     }
 
     #[test]

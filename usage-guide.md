@@ -119,7 +119,8 @@ Pick your approach based on what you're editing. Going down the wrong path alway
 | --- | --- |
 | A small change to existing class / module / app-level code | `edit_code` with a dot-separated `location` (preferred) |
 | Replacing a whole method / item body, or writing new code from scratch | `set_code` with dot-separated path |
-| Window event handlers (`Opening`, `Close`, `Resized`, etc.) | Edit `.xojo_window` file directly on disk |
+| Window event handlers (`Opening`, `Close`, `Resized`, etc.) on Xojo 2026r3 or later | `edit_code` / `set_code` with `location` like `Window1.Opening` |
+| Window event handlers on earlier releases, and control event handlers | Edit `.xojo_window` file directly on disk |
 | Window layout, controls, or properties | Edit `.xojo_window` file directly on disk |
 
 **Prefer `edit_code` for edits to existing code.** It replaces an exact
@@ -136,12 +137,13 @@ guess at the indentation will not match. If an edit fails, `edit_code` detects a
 whitespace-only-differing match and hands you back the real text to retry with,
 so copy that exactly rather than guessing again.
 
-**Window files cannot be edited through the IDE tools at all.** The IDE
-scripting API only exposes the active code editor's text, which reaches
-class/module/app-level code. It has no handle on window event handlers,
-controls, or layout — so `get_code`, `set_code`, `edit_code`, and
-`select_project_item` do not work on anything inside a `.xojo_window`. For those,
-go straight to direct file editing (below); do not waste calls trying the IDE
+**Window files are only partly reachable through the IDE tools.** The IDE
+scripting API only exposes the active code editor's text. On Xojo 2026r3 that
+includes a window's own event handlers — `get_code`, `set_code` and `edit_code`
+with `location: "Window1.Opening"` read and write them (verified on 2026r3). It
+has no handle on controls or layout, and control event handlers have not been
+verified, so for those — and for window event handlers on earlier releases — go
+straight to direct file editing (below) rather than spending calls on the IDE
 tools first.
 
 ---
