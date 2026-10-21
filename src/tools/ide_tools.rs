@@ -77,7 +77,7 @@ fn at_location_script(location: &str, body: &str) -> String {
     format!(
         "Dim __selected As Boolean = SelectProjectItem(\"{location}\")\n\
          If Not __selected Then\n  Location = \"{location}\"\n  __selected = (Location = \"{location}\")\nEnd If\n\
-         If __selected Then\n{inner}\nElse\n  Print \"ERROR: Could not select '{location}'.\"\nEnd If"
+         If __selected Then\n{inner}\nElse\n  Print \"ERROR: Could not select '{location}'; the IDE is at '\" + Location + \"'.\"\nEnd If"
     )
 }
 
@@ -673,7 +673,8 @@ Print info"#;
         if result.is_error {
             return result;
         }
-        // Post-process: derive project directory from the Project: line.
+        // Post-process: derive project directory from the Project: line, and
+        // read the Agentic Mode flag the IDE saves into the manifest.
         let mut output = result.output.clone();
         for line in result.output.lines() {
             if let Some(path) = line.strip_prefix("Project: ") {
@@ -681,6 +682,14 @@ Print info"#;
                 if let Some(parent) = path.parent() {
                     output.push('\n');
                     output.push_str(&format!("Project Directory: {}", parent.display()));
+                }
+                if let Ok(manifest) = std::fs::read_to_string(path) {
+                    let mode = if crate::tools::agentic_tools::agentic_mode_saved(&manifest) {
+                        "on (as of the last save) — Xojo reloads files edited on disk; use agentic_run to compile"
+                    } else {
+                        "off (as of the last save)"
+                    };
+                    output.push_str(&format!("\nAgentic Mode: {mode}"));
                 }
                 break;
             }

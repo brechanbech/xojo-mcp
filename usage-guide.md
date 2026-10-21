@@ -34,11 +34,11 @@ disable it unless they bring it up; help them within the read tools available.
 
 ## What xmcp can do
 
-xmcp gives you direct control over the Xojo IDE via 26 tools:
+xmcp gives you direct control over the Xojo IDE via 29 tools:
 
 - **Navigate**: `list_project_items`, `get_current_location`, `select_project_item`
 - **Read/write code**: `get_code`, `set_code`, `edit_code`, `get_selected_text`, `set_selected_text`
-- **Build and run**: `build_project`, `run_project`, `stop_project`
+- **Build and run**: `build_project`, `run_project`, `stop_project`, and `agentic_run` — run an Agentic Mode project and get its real compile errors back (Xojo 2026r3+, see "Agentic Mode projects")
 - **Analyze**: `analyze_project` — compile-check the whole project or just the selected item without building
 - **Create items**: `create_project_item`, then `set_declaration` to name and type it — `NewProperty` and `NewMethod` create a *blank, untyped* member, and `set_declaration` is the half that gives it a name, type, scope and parameters. The two work as consecutive tool calls: the newly created item stays current between them, so `set_declaration` needs no `location`. Verified on Xojo 2026r2.1 — `create_project_item` reported `Window1.Untitled`, and a separate `set_declaration` call turned it into `Window1.UserName`. Pass `location` only when editing the declaration of something that already exists
 - **Inspect and modify**: `get_item_description`, `constant_value`, `get_project_info`, `revert_project`, `save_project`
@@ -120,7 +120,8 @@ Pick your approach based on what you're editing. Going down the wrong path alway
 | A small change to existing class / module / app-level code | `edit_code` with a dot-separated `location` (preferred) |
 | Replacing a whole method / item body, or writing new code from scratch | `set_code` with dot-separated path |
 | Window event handlers (`Opening`, `Close`, `Resized`, etc.) on Xojo 2026r3 or later | `edit_code` / `set_code` with `location` like `Window1.Opening` |
-| Window event handlers on earlier releases, and control event handlers | Edit `.xojo_window` file directly on disk |
+| Control event handlers on Xojo 2026r3 or later | `edit_code` / `set_code` with `location` like `Window1.Controls.Button1.Pressed` |
+| Window and control event handlers on earlier releases | Edit `.xojo_window` file directly on disk |
 | Window layout, controls, or properties | Edit `.xojo_window` file directly on disk |
 
 **Prefer `edit_code` for edits to existing code.** It replaces an exact
@@ -139,12 +140,12 @@ so copy that exactly rather than guessing again.
 
 **Window files are only partly reachable through the IDE tools.** The IDE
 scripting API only exposes the active code editor's text. On Xojo 2026r3 that
-includes a window's own event handlers — `get_code`, `set_code` and `edit_code`
-with `location: "Window1.Opening"` read and write them (verified on 2026r3). It
-has no handle on controls or layout, and control event handlers have not been
-verified, so for those — and for window event handlers on earlier releases — go
-straight to direct file editing (below) rather than spending calls on the IDE
-tools first.
+includes event handlers — `get_code`, `set_code` and `edit_code` read and write
+`Window1.Opening` and `Window1.Controls.Button1.Pressed` (verified on 2026r3;
+note the `Controls` segment). It has no handle on controls themselves or on
+layout, so for those — and for event handlers on earlier releases — go straight
+to direct file editing (below) rather than spending calls on the IDE tools
+first.
 
 ---
 
@@ -189,35 +190,74 @@ tools first.
 
 4. **Reload in the IDE**
    Ask the user for permission, then call `revert_project`. The user may see a confirmation prompt in the IDE — they need to accept it.
+   **Skip this step in an Agentic Mode project** — Xojo reloads the file by itself (see "Agentic Mode projects" below).
 
 ### Why this matters — two silent failure modes
 
-The IDE's in-memory copy is authoritative while the project is open. This creates two traps with no error message:
+Outside Agentic Mode, the IDE's in-memory copy is authoritative while the project is open. This creates two traps with no error message:
 
 - **Edit without revert → stale code runs.** If you modify a `.xojo_window` file but skip `revert_project`, the IDE keeps using its in-memory version. `run_project` and `build_project` silently use the old code — your edits have no effect and nothing reports a problem.
 - **Save overwrites disk edits.** `save_project` (and Cmd+S in the IDE) writes the in-memory copy back to disk, clobbering any direct file edits. When a change doesn't seem to take effect, the instinct to "just save it" destroys the edit. Always `revert_project` (disk → IDE), never save, after editing files directly.
 
 ---
 
+## Agentic Mode projects (Xojo 2026r3+)
+
+In Agentic Mode (File > Agentic Mode in Xojo 2026r3 and later) the IDE watches
+the project folder and reloads any file that changes on disk. `get_project_info`
+reports `Agentic Mode: on` when the saved project has it enabled. The rules
+change in four ways:
+
+- **No `revert_project` after a file edit.** The reload happens by itself,
+  within a few seconds. Do not call `revert_project` for it.
+- **A disk edit wins, silently, for the whole file.** The reload replaces
+  everything the IDE holds for that file and discards any unsaved IDE edit in it
+  — in *any* member, not just the one you changed, and with no prompt. Verified
+  on 2026r3: a disk edit to a constant in `App.xojo_code` wiped an unsaved edit
+  to a method in the same file. Two consequences:
+  - Use one channel per file. If you changed items with `set_code` /
+    `edit_code` and now need to edit the same file on disk, call `save_project`
+    first, or your IDE-side changes are lost.
+  - The user's unsaved typing is just as exposed. Before editing a file on disk
+    that the user may have open, ask them to save.
+- **Compile with `agentic_run`.** It asks Xojo to run the project and returns
+  the real compiler errors, with locations; `run_project` cannot see those.
+  Agentic Mode is the user's opt-in to having the agent run the project to check
+  its work, so `agentic_run` may be used to verify your edits without asking
+  each time. A clean run launches the app in the debugger: stop it with
+  `stop_project` unless the user wants it running. Error lines read
+  `<location>, line <n>: <message>`; line numbers count from the first line of
+  the method body, and control events are named without the `Controls` segment
+  (`Window1.Button1.Pressed`), which the IDE tools need
+  (`Window1.Controls.Button1.Pressed`).
+- **New project items still go through the IDE.** Xojo's own `XOJO-CODING.md`
+  tells agents to add new items to the `.xojo_project` manifest by hand. Don't:
+  use `create_project_item`, which lets the IDE assign the item's ID. The rule
+  that the manifest is never hand-edited stands in Agentic Mode.
+
+---
+
 ## IDE tool limitations to be aware of
 
-### `select_project_item` cannot navigate to methods or events
+### Which paths the IDE tools can reach
 
-The IDE scripting API can navigate to top-level items, classes, modules, and windows — but not to individual methods, properties, or event implementations.
-
-For class-, module-, and app-level members, use `get_code` / `set_code` / `edit_code` with a full dot-separated path instead — these navigate automatically:
+Every tool that takes a location navigates there first, and refuses to run if
+the IDE did not land exactly on the path you gave — the error names where it did
+land, so a near miss tells you the right spelling. Use full dot-separated paths:
 
 ```text
-get_code(location: "App.MyMethod")                ✓
-edit_code(location: "Module1.Helper", ...)        ✓
-select_project_item(item_path: "App.MyMethod")    ✗  (cannot target a method)
+get_code(location: "App.MyMethod")                       ✓
+edit_code(location: "Module1.Helper", ...)               ✓
+get_code(location: "Window1.Opening")                    ✓  2026r3+
+get_code(location: "Window1.Controls.Button1.Pressed")   ✓  2026r3+
+get_code(location: "Window1.Button1.Pressed")            ✗  needs the Controls segment
 ```
 
-**Anything inside a window is the exception** — `Window1.Button1.Pressed`, other
-control code, and layout are not reachable by the IDE tools through *any* path.
-Edit the `.xojo_window` file directly (see "How to edit code" above).
+On releases before 2026r3, window and control event handlers and layout are not
+reachable through any path — edit the `.xojo_window` file directly (see "How to
+edit code" above). Layout and control properties are never reachable.
 
-`list_project_items` also does not list events — only methods, properties, and constants appear as children.
+`list_project_items` does not list events — only methods, properties, and constants appear as children.
 
 ### Parallel tool calls are not supported
 
@@ -255,6 +295,10 @@ Always wait for the user's answer before proceeding. Asking a question and then 
 | Build output on disk | — | ✓ Verify `.app` exists after build |
 
 **After `run_project` returns "Project launched in debug mode"**: always ask the user if the app is behaving correctly and if they see any exceptions in the IDE debugger.
+
+In an Agentic Mode project, `agentic_run` sees what `run_project` cannot: it
+returns the compiler's error list, with locations, instead of a bare launch
+message. Runtime exceptions stay invisible to both.
 
 ### build_project reliability
 

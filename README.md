@@ -160,7 +160,7 @@ MCP log):
 
 1. Start the Xojo IDE and open your project
 2. Start a Claude Code session in the project directory
-3. Claude will automatically discover the 28 xmcp tools and the usage guide
+3. Claude will automatically discover the 29 xmcp tools and the usage guide
 
 ### 4. Download Xojo documentation (recommended)
 
@@ -419,7 +419,7 @@ Notable differences:
 
 ## Tools
 
-xmcp exposes 28 tools across four categories:
+xmcp exposes 29 tools across five categories:
 
 **IDE tools (22):** list_project_items, get_current_location, select_project_item,
 get_code, set_code, edit_code, get_selected_text, set_selected_text, build_project,
@@ -430,6 +430,11 @@ set_declaration, analyze_project, debug_control
 **Documentation tools (3):** search_docs, lookup_class, list_doc_topics
 
 **Debug tools (2):** get_debug_log, get_system_log
+
+**Agentic Mode (1):** agentic_run — runs a project that has Xojo 2026r3's Agentic Mode on and
+returns its compile errors with locations. It works through files in the project folder, not
+the IDE socket, so it can be pointed at a project with `project_dir` even when the socket is
+unavailable.
 
 **Cost awareness (1):** estimate_request_cost
 
