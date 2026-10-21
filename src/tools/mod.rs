@@ -139,7 +139,7 @@ mod tests {
     fn clip_lands_on_char_boundary() {
         // 'é' is 2 bytes in UTF-8; place one straddling the cap.
         let mut input = "a".repeat(199);
-        input.push_str("é");           // bytes 199, 200
+        input.push('é');               // bytes 199, 200
         input.push_str(&"b".repeat(50));
         let out = truncate_for_error(&input, 200);
         // Cap 200 falls inside the multi-byte char → boundary walked back to 199.

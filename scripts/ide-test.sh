@@ -32,9 +32,12 @@ guard fd >= 0 else { fputs("socket() failed\n", stderr); exit(1) }
 
 var addr = sockaddr_un()
 addr.sun_family = sa_family_t(AF_UNIX)
+// Measured outside the closure: reading addr while sun_path is borrowed mutably
+// is an exclusivity violation that Swift 6.4 traps on.
+let sunPathSize = MemoryLayout.size(ofValue: addr.sun_path)
 withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
     socket_path.withCString { src in
-        _ = memcpy(ptr, src, min(Int(MemoryLayout.size(ofValue: addr.sun_path)), socket_path.utf8.count + 1))
+        _ = memcpy(ptr, src, min(sunPathSize, socket_path.utf8.count + 1))
     }
 }
 

@@ -6,7 +6,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const DEFAULT_SOCKET_NAME: &str = "XojoIDE";
-const MAX_RETRIES: u32 = 5;
+/// Seven attempts back off for 6.3 s in total (see `retry_pause`). Xojo 2026r3
+/// drops and recreates its socket after each connection and can stay away for
+/// ~3 s, which outlasted the 1.5 s that five attempts gave.
+const MAX_RETRIES: u32 = 7;
 
 /// Resolve the IPC socket file name.
 ///

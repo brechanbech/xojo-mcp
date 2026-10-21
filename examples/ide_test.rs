@@ -43,11 +43,11 @@ fn main() {
                 let data = &buf[..total];
                 for chunk in data.split(|&b| b == 0) {
                     if chunk.is_empty() { continue; }
-                    if let Ok(s) = std::str::from_utf8(chunk) {
-                        if s.contains(&tag) {
-                            println!("{s}");
-                            return;
-                        }
+                    if let Ok(s) = std::str::from_utf8(chunk)
+                        && s.contains(&tag)
+                    {
+                        println!("{s}");
+                        return;
                     }
                 }
             }
