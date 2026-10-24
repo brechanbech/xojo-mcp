@@ -15,6 +15,7 @@ pub struct ListProjectItems;
 
 impl Tool for ListProjectItems {
     fn name(&self) -> &'static str { "list_project_items" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("List Project Items") }
     fn description(&self) -> &'static str {
         "Lists child items at a given project location in the Xojo IDE Navigator. \
          Returns tab-delimited list. Empty location = top-level items."
@@ -44,6 +45,7 @@ pub struct GetCurrentLocation;
 
 impl Tool for GetCurrentLocation {
     fn name(&self) -> &'static str { "get_current_location" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Current Location") }
     fn description(&self) -> &'static str {
         "Returns the currently selected location in the Xojo IDE Navigator and its type \
          (e.g. Class, Method, Window)."
@@ -88,6 +90,7 @@ pub struct SelectProjectItem;
 
 impl Tool for SelectProjectItem {
     fn name(&self) -> &'static str { "select_project_item" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Select Project Item") }
     fn description(&self) -> &'static str {
         "Selects and navigates to a specific item in the Xojo IDE Navigator. \
          Use dot-separated paths."
@@ -159,6 +162,7 @@ pub struct GetCode;
 
 impl Tool for GetCode {
     fn name(&self) -> &'static str { "get_code" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Code") }
     fn description(&self) -> &'static str {
         "Reads the source code at the current or specified location in the Xojo IDE."
     }
@@ -185,6 +189,7 @@ pub struct SetCode;
 
 impl Tool for SetCode {
     fn name(&self) -> &'static str { "set_code" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Set Code", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Writes source code to the current or specified location in the Xojo IDE. \
@@ -220,6 +225,7 @@ pub struct EditCode;
 
 impl Tool for EditCode {
     fn name(&self) -> &'static str { "edit_code" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Edit Code", true, false) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Makes a targeted edit to an item's source code by replacing an exact \
@@ -394,6 +400,7 @@ pub struct GetSelectedText;
 
 impl Tool for GetSelectedText {
     fn name(&self) -> &'static str { "get_selected_text" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Selected Text") }
     fn description(&self) -> &'static str {
         "Returns the currently selected text in the Xojo IDE code editor, \
          along with selection start position and length."
@@ -419,6 +426,7 @@ pub struct SetSelectedText;
 
 impl Tool for SetSelectedText {
     fn name(&self) -> &'static str { "set_selected_text" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Replace Selected Text", true, false) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Replaces the currently selected text in the Xojo IDE code editor with new text. \
@@ -475,6 +483,7 @@ pub struct BuildProject;
 
 impl Tool for BuildProject {
     fn name(&self) -> &'static str { "build_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Build Project", false, true) }
     fn description(&self) -> &'static str {
         "Builds the current Xojo project. Returns the path to the built application \
          on success, or build errors on failure."
@@ -517,6 +526,7 @@ pub struct RunProject;
 
 impl Tool for RunProject {
     fn name(&self) -> &'static str { "run_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run Project", false, false) }
     fn description(&self) -> &'static str { "Runs the current Xojo project in debug mode." }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -536,6 +546,7 @@ pub struct StopProject;
 
 impl Tool for StopProject {
     fn name(&self) -> &'static str { "stop_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Stop Debug Session", true, true) }
     fn description(&self) -> &'static str { "Stops the currently running Xojo debug session." }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -559,6 +570,7 @@ const VALID_ITEM_TYPES: &[&str] = &[
 
 impl Tool for CreateProjectItem {
     fn name(&self) -> &'static str { "create_project_item" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Create Project Item", false, false) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Creates a new project item in the Xojo IDE. First navigates to the target \
@@ -617,6 +629,7 @@ pub struct RunIdeScript;
 
 impl Tool for RunIdeScript {
     fn name(&self) -> &'static str { "run_ide_script" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run IDE Script", true, false).open_world() }
     fn description(&self) -> &'static str {
         "Executes an arbitrary Xojo IDE script. Use Print to return values. \
          Powerful escape hatch — IDE scripting can quit Xojo, close/reopen \
@@ -656,6 +669,7 @@ pub struct GetProjectInfo;
 
 impl Tool for GetProjectInfo {
     fn name(&self) -> &'static str { "get_project_info" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Project Info") }
     fn description(&self) -> &'static str {
         "Returns information about the currently open Xojo project including path, \
          Xojo IDE version, and selected item."
@@ -705,6 +719,7 @@ pub struct RevertProject;
 
 impl Tool for RevertProject {
     fn name(&self) -> &'static str { "revert_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Revert Project", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Reverts the current Xojo project to the version saved on disk. \
@@ -727,6 +742,7 @@ pub struct SaveProject;
 
 impl Tool for SaveProject {
     fn name(&self) -> &'static str { "save_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Save Project", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Saves the current Xojo project to disk via IDE scripting \
@@ -803,6 +819,9 @@ pub struct GetItemDescription;
 
 impl Tool for GetItemDescription {
     fn name(&self) -> &'static str { "get_item_description" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Get or Set Item Description", true, true) }
+    // Writes when given a value, so it is a mutating tool, as property_value is.
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Gets or sets the description of the currently selected project item \
          (method, property, event, etc.)."
@@ -852,6 +871,9 @@ pub struct ConstantValue;
 
 impl Tool for ConstantValue {
     fn name(&self) -> &'static str { "constant_value" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Get or Set Constant", true, true) }
+    // Writes when given a value, so it is a mutating tool, as property_value is.
+    fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Gets or sets the value of a project constant in the Xojo IDE. \
          The constant must already exist in the project."
@@ -895,6 +917,7 @@ pub struct PropertyValue;
 
 impl Tool for PropertyValue {
     fn name(&self) -> &'static str { "property_value" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Get or Set Property", true, true) }
     // A set is a project change; a get is not, but the tool is one tool, so it
     // is gated as the more dangerous of the two.
     fn mutates(&self) -> bool { true }
@@ -963,6 +986,7 @@ fn scope_code(scope: &str) -> Option<u8> {
 
 impl Tool for SetDeclaration {
     fn name(&self) -> &'static str { "set_declaration" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Set Declaration", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Sets the name, type, scope and parameters of the CURRENT method or property in the \
@@ -1055,6 +1079,7 @@ pub struct AnalyzeProject;
 
 impl Tool for AnalyzeProject {
     fn name(&self) -> &'static str { "analyze_project" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Analyze Project") }
     fn description(&self) -> &'static str {
         "Analyzes the current Xojo project for compile errors and warnings without \
          building. Reports unused variables, type mismatches, deprecated API usage, \
@@ -1104,6 +1129,7 @@ const VALID_DEBUG_ACTIONS: &[(&str, &str)] = &[
 
 impl Tool for DebugControl {
     fn name(&self) -> &'static str { "debug_control" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Control Debug Session", false, false) }
     fn description(&self) -> &'static str {
         "Controls the Xojo debug session. Actions: \"step_over\" (execute current \
          line), \"step_into\" (step into method call), \"step_out\" (step out of \

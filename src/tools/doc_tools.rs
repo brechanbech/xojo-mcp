@@ -34,6 +34,7 @@ impl SearchDocs {
 
 impl Tool for SearchDocs {
     fn name(&self) -> &'static str { "search_docs" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Search Documentation") }
     fn description(&self) -> &'static str {
         "Searches local Xojo documentation guides and tutorials by keyword. Returns matching \
          sections with context. For specific class/method lookup, use lookup_class instead."
@@ -134,6 +135,7 @@ pub struct LookupClass;
 
 impl Tool for LookupClass {
     fn name(&self) -> &'static str { "lookup_class" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Look Up Class") }
     fn description(&self) -> &'static str {
         "Looks up detailed documentation for a specific Xojo class, control, data type, or API by name."
     }
@@ -482,6 +484,7 @@ pub struct ListDocTopics;
 
 impl Tool for ListDocTopics {
     fn name(&self) -> &'static str { "list_doc_topics" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("List Documentation Topics") }
     fn description(&self) -> &'static str {
         "Lists available Xojo documentation topics and pages. Optionally filtered by keyword."
     }

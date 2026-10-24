@@ -122,7 +122,38 @@ fn truncate_for_error(s: &str, cap: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::truncate_for_error;
+    use super::{all_tools, truncate_for_error};
+    use std::collections::HashSet;
+
+    #[test]
+    fn a_tool_read_only_mode_blocks_is_never_hinted_read_only() {
+        // The hint must not promise less than the enforcement assumes.
+        for t in all_tools() {
+            if t.mutates() {
+                assert!(!t.annotations().read_only, "{} mutates but is hinted read-only", t.name());
+            }
+        }
+    }
+
+    #[test]
+    fn every_tool_has_a_distinct_title() {
+        let mut titles = HashSet::new();
+        for t in all_tools() {
+            let title = t.annotations().title;
+            assert!(!title.is_empty(), "{} has no title", t.name());
+            assert!(titles.insert(title), "title {title:?} is used twice");
+        }
+    }
+
+    #[test]
+    fn only_run_ide_script_reaches_the_open_world() {
+        let open: Vec<_> = all_tools()
+            .into_iter()
+            .filter(|t| t.annotations().open_world)
+            .map(|t| t.name())
+            .collect();
+        assert_eq!(open, ["run_ide_script"]);
+    }
 
     #[test]
     fn short_input_passes_through() {

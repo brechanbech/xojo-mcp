@@ -272,16 +272,35 @@ flag or environment variable.)
 
 ### What it actually blocks
 
-Read-only mode disables the six tools that modify the project:
+Read-only mode disables the ten tools that modify the project:
 
 | Tool | What it would otherwise do |
 | --- | --- |
 | `set_code` | Overwrite the code of a method, property, or other item |
 | `edit_code` | Replace an exact substring within an item's code |
 | `set_selected_text` | Replace the current text selection in the code editor |
+| `set_declaration` | Rename or retype a method or property |
 | `create_project_item` | Add a new class, module, window, or other item |
+| `property_value` | Change a framework property such as `App.OptimizationLevel` |
+| `constant_value` | Change a project constant's value |
+| `get_item_description` | Change an item's description |
 | `revert_project` | Discard unsaved changes back to the last save |
 | `save_project` | Write the project's current in-memory state to disk |
+
+`property_value`, `constant_value` and `get_item_description` also *read*, but each
+is one tool, so read-only mode blocks the read along with the write.
+
+### Tool annotations
+
+Every tool also carries MCP behaviour hints in `tools/list` — a `title` and
+`readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` — so a
+client can decide what to confirm before calling it. These are hints, not
+enforcement, and they describe a tool's effect on the whole machine rather than
+on the project, so they are stricter than read-only mode: `build_project`,
+`run_project` and `agentic_run` leave the source alone and stay available in
+read-only mode, but they write build output or launch an app, so they are not
+hinted read-only. `openWorldHint` is false everywhere except `run_ide_script`,
+whose `DoShellCommand` can reach anything.
 
 Everything else remains fully available — navigating and listing items, reading
 code (`get_code`), building (`build_project`), running (`run_project`),

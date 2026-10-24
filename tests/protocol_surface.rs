@@ -26,6 +26,8 @@ const MUTATING: &[&str] = &[
     "set_code",
     "edit_code",
     "property_value",
+    "constant_value",
+    "get_item_description",
     "set_declaration",
     "set_selected_text",
     "create_project_item",
@@ -240,6 +242,54 @@ fn every_listed_tool_has_a_usable_schema() {
             tool["inputSchema"]["properties"].is_object(),
             "{name} has no schema properties"
         );
+    }
+}
+
+#[test]
+fn every_listed_tool_states_all_four_behaviour_hints() {
+    // A hint left out falls back to the spec default -- destructive and
+    // open-world -- so each must be sent explicitly, and a title with them.
+    let mut server = Server::start();
+    server.handshake(PREFERRED);
+
+    let response = server.request("tools/list", json!({}));
+    let tools = response["result"]["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("tools/list returned no array: {response}"));
+
+    for tool in tools {
+        let name = tool["name"].as_str().expect("a tool has no name");
+        let a = &tool["annotations"];
+        for hint in ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] {
+            assert!(a[hint].is_boolean(), "{name} does not state {hint}: {a}");
+        }
+        assert!(
+            tool["title"].as_str().is_some_and(|t| !t.is_empty()),
+            "{name} has no title"
+        );
+        assert_eq!(tool["title"], a["title"], "{name} has two different titles");
+    }
+}
+
+#[test]
+fn read_tools_are_hinted_read_only_and_writes_are_not() {
+    let mut server = Server::start();
+    server.handshake(PREFERRED);
+    let response = server.request("tools/list", json!({}));
+    let tools = response["result"]["tools"].as_array().unwrap().clone();
+    let hint = |n: &str| {
+        tools
+            .iter()
+            .find(|t| t["name"] == n)
+            .unwrap_or_else(|| panic!("{n} not listed"))["annotations"]["readOnlyHint"]
+            .clone()
+    };
+
+    for tool in ["get_code", "list_project_items", "search_docs", "get_debug_log"] {
+        assert_eq!(hint(tool), true, "{tool} should be read-only");
+    }
+    for tool in MUTATING.iter().chain(&["run_project", "build_project", "run_ide_script"]) {
+        assert_eq!(hint(tool), false, "{tool} should not be read-only");
     }
 }
 

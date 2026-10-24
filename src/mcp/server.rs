@@ -344,6 +344,8 @@ mod tests {
         "set_code",
         "edit_code",
         "property_value",
+        "constant_value",
+        "get_item_description",
         "set_declaration",
         "set_selected_text",
         "create_project_item",

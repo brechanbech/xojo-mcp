@@ -88,6 +88,56 @@ pub trait Tool: Send + Sync {
     fn mutates(&self) -> bool {
         false
     }
+
+    /// The MCP behaviour hints sent with this tool in `tools/list`. There is no
+    /// default: every tool states them, because a client falls back to the
+    /// spec's defaults -- destructive and open-world -- for any it leaves out.
+    fn annotations(&self) -> ToolAnnotations;
+}
+
+/// MCP tool annotations. These are hints for the client, not enforcement --
+/// read-only mode is what enforces. They describe the tool's effect on its
+/// whole environment, which is broader than `mutates()`: building or running
+/// a project leaves its source alone, so read-only mode allows it, but it does
+/// change the machine, so it is not `read_only` here.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolAnnotations {
+    pub title: &'static str,
+    pub read_only: bool,
+    /// Meaningful only when not `read_only`: may overwrite or discard rather
+    /// than only add.
+    pub destructive: bool,
+    /// Meaningful only when not `read_only`: repeating the call with the same
+    /// arguments has no further effect.
+    pub idempotent: bool,
+    /// Reaches beyond the local IDE and its files.
+    pub open_world: bool,
+}
+
+impl ToolAnnotations {
+    /// A tool that only observes.
+    pub const fn read_only(title: &'static str) -> Self {
+        Self { title, read_only: true, destructive: false, idempotent: true, open_world: false }
+    }
+
+    /// A tool that changes something, local to the IDE and its files.
+    pub const fn writes(title: &'static str, destructive: bool, idempotent: bool) -> Self {
+        Self { title, read_only: false, destructive, idempotent, open_world: false }
+    }
+
+    pub const fn open_world(self) -> Self {
+        Self { open_world: true, ..self }
+    }
+
+    pub fn to_json(self) -> Value {
+        serde_json::json!({
+            "title": self.title,
+            "readOnlyHint": self.read_only,
+            "destructiveHint": self.destructive,
+            "idempotentHint": self.idempotent,
+            "openWorldHint": self.open_world,
+        })
+    }
 }
 
 /// Infer the ParamType from a serde_json::Value.
@@ -193,8 +243,11 @@ pub fn tool_to_json(tool: &dyn Tool) -> Value {
         }
     }
 
+    let annotations = tool.annotations();
     serde_json::json!({
         "name": tool.name(),
+        "title": annotations.title,
+        "annotations": annotations.to_json(),
         "description": tool.description(),
         "inputSchema": {
             "type": "object",

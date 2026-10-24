@@ -9,6 +9,7 @@ pub struct EstimateRequestCost;
 
 impl Tool for EstimateRequestCost {
     fn name(&self) -> &'static str { "estimate_request_cost" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Estimate Request Cost") }
     fn description(&self) -> &'static str {
         "Estimates likely token cost for a proposed request and suggests cheaper \
          alternative approaches."

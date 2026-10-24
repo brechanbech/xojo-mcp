@@ -185,6 +185,7 @@ pub struct AgenticRun;
 
 impl Tool for AgenticRun {
     fn name(&self) -> &'static str { "agentic_run" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run in Agentic Mode", false, false) }
     fn description(&self) -> &'static str {
         "Agentic Mode only (Xojo 2026r3+): runs the project and returns its compile \
          errors, if any. Unlike run_project, this reports real compiler errors with \

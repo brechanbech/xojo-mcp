@@ -15,6 +15,7 @@ pub struct GetDebugLog;
 
 impl Tool for GetDebugLog {
     fn name(&self) -> &'static str { "get_debug_log" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Debug Log") }
     fn description(&self) -> &'static str {
         "Reads the xmcp debug log file at /tmp/xmcp_debug.log \
          (written by App.UnhandledException handlers). Returns exception details \
@@ -65,6 +66,7 @@ pub struct GetSystemLog;
 
 impl Tool for GetSystemLog {
     fn name(&self) -> &'static str { "get_system_log" }
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get System Log") }
     fn description(&self) -> &'static str {
         "Reads recent System.DebugLog output from the macOS unified log for a running \
          Xojo debug app (process name = app name + '.debug')."
