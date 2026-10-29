@@ -407,8 +407,8 @@ none. To find it, split the script or `Print` values before the line you suspect
 
 ### While the IDE is still answering a request, do not quit or restart the client
 
-Every IDE tool waits a limited time — two minutes for `build_project`, one for
-`analyze_project`, 30 seconds for `run_project`, 10 seconds for most others, and
+Every IDE tool waits a limited time — 30 minutes for `build_project`, one minute
+for `analyze_project`, 30 seconds for `run_project`, 10 seconds for most others, and
 whatever `timeout` you pass to `run_ide_script`. When a request runs past its
 limit, the IDE is not stopped: it finishes the work, a build or a script waiting
 on a dialog. xmcp stops waiting but keeps the

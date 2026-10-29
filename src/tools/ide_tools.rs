@@ -511,7 +511,11 @@ impl Tool for BuildProject {
         let reveal = arg_bool(args, "reveal", false);
         let reveal_str = if reveal { "True" } else { "False" };
         let script = format!("DoCommand \"BuildApp {build_type} {reveal_str}\"\nPrint \"\"");
-        let result = ide_call(ctx, &script, Duration::from_secs(120));
+        // A real project can take many minutes to build. Running past the limit
+        // is safe -- the request parks until the IDE answers -- but every other
+        // request is refused meanwhile, so the limit is set to outlast a build
+        // rather than to give up on one.
+        let result = ide_call(ctx, &script, Duration::from_secs(30 * 60));
         if result.is_error {
             return result;
         }
