@@ -190,14 +190,21 @@ impl Tool for AgenticRun {
         "Agentic Mode only (Xojo 2026r3+): runs the project and returns its compile \
          errors, if any. Unlike run_project, this reports real compiler errors with \
          their locations. It works through files in the project folder rather than \
-         IDE scripting, so it also works when the IDE socket does not. A successful \
-         run launches the app in the debugger; stop it with stop_project."
+         IDE scripting, so it also works when the IDE socket does not: it drops \
+         XojoRunProject.txt into the project folder and reads back XojoCompileErrors.txt. \
+         Compile errors fail the call, one '<location>, line <n>: <message>' per line. A \
+         successful run launches the app in the debugger; stop it with stop_project. If Xojo \
+         has not taken the request within 10 seconds, Agentic Mode is off or the project is \
+         not open: the request file is removed again and the call fails saying how to turn \
+         the mode on. Agentic Mode is the user's opt-in to having the project run to check \
+         edits, so this may be called without asking each time."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "project_dir",
             param_type: ParamType::String,
-            description: "Folder containing the .xojo_project. Defaults to the project open in the IDE.",
+            description: "Absolute path of the folder containing the .xojo_project. Omit to \
+                          use the project open in the IDE, which needs the IDE socket.",
             required: false,
             default: None,
         }, ToolParam {

@@ -11,20 +11,27 @@ impl Tool for EstimateRequestCost {
     fn name(&self) -> &'static str { "estimate_request_cost" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Estimate Request Cost") }
     fn description(&self) -> &'static str {
-        "Estimates likely token cost for a proposed request and suggests cheaper \
-         alternative approaches."
+        "Rates a planned request's likely token cost as LOW, MEDIUM or HIGH, with the reasons \
+         and cheaper ways to do it. It is a keyword heuristic over the request text and the \
+         planned tool names, with no project or IDE access and no real token count, so treat \
+         it as a prompt to narrow scope rather than a measurement. Most useful before \
+         documentation-heavy or project-wide work."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "request",
             param_type: ParamType::String,
-            description: "Natural language request (e.g. 'Add a ListBox to Window1')",
+            description: "The task in plain words, e.g. 'Add a ListBox to Window1'. Longer \
+                          text and words such as 'entire', 'refactor' or 'docs' raise the \
+                          rating.",
             required: true,
             default: None,
         }, ToolParam {
             name: "planned_tools",
             param_type: ParamType::String,
-            description: "Comma-separated list of expected tool calls",
+            description: "Comma-separated tool names you expect to call, e.g. 'search_docs, \
+                          get_code'. Only list_doc_topics, lookup_class, search_docs, get_code \
+                          and set_code affect the rating.",
             required: false,
             default: None,
         }];
@@ -88,9 +95,9 @@ impl Tool for EstimateRequestCost {
                     }
                     "lookup_class" => {
                         score += 2;
-                        reasons.push("lookup_class returns full class docs".to_string());
+                        reasons.push("lookup_class returns a class's member tables".to_string());
                         alternatives
-                            .push("Try search_docs first to confirm the class name".to_string());
+                            .push("Pass member to lookup_class for one member's entry".to_string());
                     }
                     "search_docs" => {
                         score += 2;

@@ -36,26 +36,33 @@ impl Tool for SearchDocs {
     fn name(&self) -> &'static str { "search_docs" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Search Documentation") }
     fn description(&self) -> &'static str {
-        "Searches local Xojo documentation guides and tutorials by keyword. Returns matching \
-         sections with context. For specific class/method lookup, use lookup_class instead."
+        "Searches the full text of the local Xojo documentation — guides, tutorials and API \
+         pages — for a case-insensitive literal substring. Returns up to max_results excerpts \
+         in document order (not ranked), each headed by its section title, with the matching \
+         line marked '>>>'. A multi-word query must appear verbatim, so one distinctive word \
+         usually finds more. No match is a normal result, not an error. Use this for concepts, \
+         how-tos, error messages, or a class whose name you are unsure of; when you know the \
+         name, lookup_class returns its reference page directly. Reads the installed \
+         documentation (fails if none was found) and needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "query",
             param_type: ParamType::String,
-            description: "Search term (e.g. 'JSONItem', 'database')",
+            description: "Text to find, matched case-insensitively as a literal substring \
+                          (e.g. 'JSONItem', 'prepared statement')",
             required: true,
             default: None,
         }, ToolParam {
             name: "max_results",
             param_type: ParamType::Integer,
-            description: "Max sections to return",
+            description: "Most excerpts to return. Default 5.",
             required: false,
             default: None,
         }, ToolParam {
             name: "context_lines",
             param_type: ParamType::Integer,
-            description: "Lines before/after match to include",
+            description: "Lines to include before and after each match. Default 10.",
             required: false,
             default: None,
         }];
@@ -137,14 +144,23 @@ impl Tool for LookupClass {
     fn name(&self) -> &'static str { "lookup_class" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Look Up Class") }
     fn description(&self) -> &'static str {
-        "Looks up detailed documentation for a specific Xojo class, control, data type, or API by name."
+        "Returns the reference page for one Xojo class, control, data type or other API, by \
+         name (case-insensitive). If no page has that exact name it tries the Desktop and Web \
+         prefixes, so 'Button' finds DesktopButton. By default the page is cut to its \
+         description and member tables (methods, properties, events with their signatures), \
+         markup stripped; pass member for one member's full entry. An unknown class is an \
+         error suggesting search_docs; an unknown member is an error listing the members the \
+         page documents. Use this when you know the name; use search_docs for concepts or a \
+         name you are unsure of, and list_doc_topics to browse page titles. Reads the \
+         installed documentation (fails if none was found) and needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[
             ToolParam {
                 name: "class_name",
                 param_type: ParamType::String,
-                description: "Class name to look up (e.g. 'DesktopButton', 'JSONItem')",
+                description: "Class or API name (e.g. 'DesktopButton', 'JSONItem'). An API \
+                              page's title in list_doc_topics is the name to pass.",
                 required: true,
                 default: None,
             },
@@ -159,8 +175,11 @@ impl Tool for LookupClass {
             ToolParam {
                 name: "full",
                 param_type: ParamType::Boolean,
-                description: "Return the unprocessed documentation page. Large: String is \
-                              over 70,000 characters of raw reStructuredText.",
+                description: "Return the unprocessed page instead of the summary. Default \
+                              false. The summary leaves out the member entries and the \
+                              sections after them (notes, sample code, compatibility); this \
+                              is how to read those. Large: String is over 70,000 characters \
+                              of raw reStructuredText, and output is cut at 100,000.",
                 required: false,
                 default: None,
             },
@@ -486,13 +505,20 @@ impl Tool for ListDocTopics {
     fn name(&self) -> &'static str { "list_doc_topics" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("List Documentation Topics") }
     fn description(&self) -> &'static str {
-        "Lists available Xojo documentation topics and pages. Optionally filtered by keyword."
+        "Lists the pages in the local Xojo documentation index, one title and URL per line. \
+         Unfiltered that is the whole index — about 1,600 entries, 150 KB — so pass a filter. \
+         An API page's title is the name lookup_class takes. No match is a normal result, not \
+         an error. Use this to find which pages exist; search_docs searches their text, and \
+         lookup_class reads one. Reads the installed documentation (fails if none was found) \
+         and needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "filter",
             param_type: ParamType::String,
-            description: "Keyword to filter topics (e.g. 'Desktop', 'database'). Returns all if empty.",
+            description: "Case-insensitive substring matched against each title and URL \
+                          (e.g. 'Desktop', 'database'), so 'desktop' also matches every page \
+                          under a /desktop/ path. Omit to list the whole index.",
             required: false,
             default: None,
         }];

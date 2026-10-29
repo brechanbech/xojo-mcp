@@ -15,17 +15,21 @@ pub struct GetDebugLog;
 
 impl Tool for GetDebugLog {
     fn name(&self) -> &'static str { "get_debug_log" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Debug Log") }
+    // Not read-only: `clear` deletes the log file.
+    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Get Debug Log", true, true) }
     fn description(&self) -> &'static str {
-        "Reads the xmcp debug log file at /tmp/xmcp_debug.log \
-         (written by App.UnhandledException handlers). Returns exception details \
-         or empty message if no log exists."
+        "Returns /tmp/xmcp_debug.log, which a built Xojo app writes from its \
+         App.UnhandledException handler when it crashes (usage-guide.md has the handler to \
+         add). This is how to see an exception in a built app; in a debug run the IDE's \
+         debugger catches exceptions instead, and get_system_log reads System.DebugLog \
+         output. No log file is a normal result that says so. With clear, the file is \
+         deleted after reading, so the next crash starts a fresh log. Needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "clear",
             param_type: ParamType::Boolean,
-            description: "Delete log file after reading",
+            description: "Delete the log file after reading it. Default false.",
             required: false,
             default: None,
         }];
@@ -68,20 +72,26 @@ impl Tool for GetSystemLog {
     fn name(&self) -> &'static str { "get_system_log" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get System Log") }
     fn description(&self) -> &'static str {
-        "Reads recent System.DebugLog output from the macOS unified log for a running \
-         Xojo debug app (process name = app name + '.debug')."
+        "Returns recent System.DebugLog output of a Xojo app from the macOS unified log \
+         (`log show`): a debug run started by run_project, or a built app. Only lines the \
+         Xojo framework logged are returned; when there are none but the process logged \
+         something else, up to 200 of those raw entries are returned instead, labelled as \
+         such. An empty result almost always means no System.DebugLog call ran, so add one \
+         and query again; prefer this over MessageBox for tracing. Needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "process_name",
             param_type: ParamType::String,
-            description: "Process name filter (e.g. 'MyApp.debug')",
+            description: "Exact process name: the app's name plus '.debug' for a debug run \
+                          (e.g. 'MyApp.debug'), or the app's name for a built app. Letters, \
+                          digits, spaces, '.', '_' and '-' only.",
             required: true,
             default: None,
         }, ToolParam {
             name: "seconds",
             param_type: ParamType::Integer,
-            description: "How many seconds back to search (default 60, max 3600)",
+            description: "How far back to look, in seconds. Default 60, max 3600.",
             required: false,
             default: None,
         }];

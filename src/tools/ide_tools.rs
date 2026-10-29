@@ -17,14 +17,20 @@ impl Tool for ListProjectItems {
     fn name(&self) -> &'static str { "list_project_items" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("List Project Items") }
     fn description(&self) -> &'static str {
-        "Lists child items at a given project location in the Xojo IDE Navigator. \
-         Returns tab-delimited list. Empty location = top-level items."
+        "Lists the project items directly under a location in the open Xojo project's \
+         Navigator, as tab-separated names: the top level (App, windows, classes, modules, \
+         folders) when location is empty, or what a folder holds. On Xojo 2026r3 an item's \
+         members (methods, properties, constants, events) are not listed; read them from its \
+         .xojo_code or .xojo_window file, in the folder get_project_info names. A location \
+         with nothing listable under it, or one that does not exist, returns a message saying \
+         so rather than an error. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "location",
             param_type: ParamType::String,
-            description: "Dot-separated project path (e.g. 'App' or 'Module1.Method1'). Leave empty for top-level items.",
+            description: "Dot-separated Navigator path of a folder or item, e.g. 'Build \
+                          Automation'. Omit for the top level.",
             required: false,
             default: None,
         }];
@@ -34,7 +40,18 @@ impl Tool for ListProjectItems {
         let location = arg_str(args, "location", "");
         let escaped = escape_ide_string(location);
         let script = format!(r#"Print SubLocations("{escaped}")"#);
-        ide_call_default(ctx, &script)
+        let result = ide_call_default(ctx, &script);
+        // An empty list comes back as the IDE's empty reply, which would
+        // otherwise reach the caller as a bare "{}". Xojo 2026r3 lists no
+        // members, and gives the same nothing for a path that does not exist.
+        if !result.is_error && result.output == EMPTY_REPLY {
+            return ToolResult::success(format!(
+                "Nothing listed under '{location}'. Either it holds no project items, or the \
+                 path does not exist; on Xojo 2026r3 members (methods, properties, constants, \
+                 events) are never listed here, so read them from the item's file on disk."
+            ));
+        }
+        result
     }
 }
 
@@ -47,8 +64,11 @@ impl Tool for GetCurrentLocation {
     fn name(&self) -> &'static str { "get_current_location" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Current Location") }
     fn description(&self) -> &'static str {
-        "Returns the currently selected location in the Xojo IDE Navigator and its type \
-         (e.g. Class, Method, Window)."
+        "Returns the item selected in the Xojo IDE's Navigator and its type, as \
+         '<path> (<type>)', e.g. 'Module1.Helper (Method)'. Tools whose location is optional \
+         act on this item when it is omitted, so check it before relying on that; \
+         select_project_item changes it. get_project_info returns the same plus the project's \
+         path and Xojo version. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -92,14 +112,20 @@ impl Tool for SelectProjectItem {
     fn name(&self) -> &'static str { "select_project_item" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Select Project Item") }
     fn description(&self) -> &'static str {
-        "Selects and navigates to a specific item in the Xojo IDE Navigator. \
-         Use dot-separated paths."
+        "Selects an item or member in the Xojo IDE's Navigator by dot-separated path and \
+         returns where the IDE landed and its type. A path that does not exist is an error \
+         naming where the IDE is instead, so a near miss shows the right spelling. Changes \
+         only the IDE's selection, not the project. Tools that take a location select it \
+         themselves; use this for those that act on the current item: get_selected_text, \
+         set_selected_text, analyze_project with scope 'item', and create_project_item \
+         without parent_location. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "item_path",
             param_type: ParamType::String,
-            description: "Dot-separated path (e.g. 'App', 'Module1.MyMethod')",
+            description: "Dot-separated path, e.g. 'App', 'Module1.MyMethod', or on Xojo \
+                          2026r3+ 'Window1.Controls.Button1.Pressed'",
             required: true,
             default: None,
         }];
@@ -155,6 +181,10 @@ fn set_code_script(code: &str, location: &str) -> String {
     }
 }
 
+/// What the IDE sends for a `Print` of an empty string: its empty reply, which
+/// `extract_response` passes on as text. An empty method body arrives as this.
+const EMPTY_REPLY: &str = "{}";
+
 // ---------------------------------------------------------------------------
 // get_code
 // ---------------------------------------------------------------------------
@@ -164,13 +194,22 @@ impl Tool for GetCode {
     fn name(&self) -> &'static str { "get_code" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Code") }
     fn description(&self) -> &'static str {
-        "Reads the source code at the current or specified location in the Xojo IDE."
+        "Returns the code of one method, event handler or other code item in the open Xojo \
+         project: the item at location, or the one open in the code editor when location is \
+         omitted. Giving a location also selects that item in the Navigator. A path that does \
+         not exist, or an item with no code editor, is an error; an empty body says so. The \
+         code is the body only: the declaration line is not included. Window and control \
+         event handlers are reachable on Xojo 2026r3 and later; on earlier releases read the \
+         .xojo_window file instead. Copy edit_code's old_string from this output. Needs the \
+         Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "location",
             param_type: ParamType::String,
-            description: "Dot-separated path (e.g. 'Module1.Method1'). Reads current location if empty.",
+            description: "Dot-separated path, e.g. 'Module1.Method1', 'Window1.Opening' or \
+                          'Window1.Controls.Button1.Pressed' (note the Controls segment). Omit \
+                          for the item open in the code editor.",
             required: false,
             default: None,
         }];
@@ -178,7 +217,11 @@ impl Tool for GetCode {
     }
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let location = arg_str(args, "location", "");
-        ide_call_default(ctx, &get_code_script(location))
+        let result = ide_call_default(ctx, &get_code_script(location));
+        if !result.is_error && result.output == EMPTY_REPLY {
+            return ToolResult::success("The item's code is empty.");
+        }
+        result
     }
 }
 
@@ -192,20 +235,27 @@ impl Tool for SetCode {
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Set Code", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Writes source code to the current or specified location in the Xojo IDE. \
-         Replaces entire code content."
+        "Replaces the whole code of one method, event handler or other code item in the open \
+         Xojo project: the item at location, or the one open in the code editor when location \
+         is omitted. Everything the item held is overwritten, so for a change to existing \
+         code prefer edit_code, which sends only the part that changes. The name, parameters \
+         and return type are not part of the code; set_declaration changes those. A path \
+         that does not exist, or an item with no code editor, is an error and nothing is \
+         written. Reaches the same items as get_code. The change stays in the IDE until \
+         save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "code",
             param_type: ParamType::String,
-            description: "Source code to write",
+            description: "The item's new code, replacing all of it",
             required: true,
             default: None,
         }, ToolParam {
             name: "location",
             param_type: ParamType::String,
-            description: "Dot-separated path to navigate to first",
+            description: "Dot-separated path, as for get_code. Omit for the item open in the \
+                          code editor.",
             required: false,
             default: None,
         }];
@@ -234,7 +284,10 @@ impl Tool for EditCode {
          not need to resend the whole item to change a few lines. `old_string` must \
          match the existing code exactly (including whitespace and indentation) and, \
          unless `replace_all` is true, must occur exactly once. Prefer this over \
-         set_code for edits to existing code."
+         set_code for edits to existing code. If old_string is missing or ambiguous nothing \
+         is written, and when the only difference is whitespace the error returns the exact \
+         text to retry with. Reaches the same items as get_code. The change stays in the IDE \
+         until save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -294,8 +347,10 @@ impl Tool for EditCode {
         }
 
         // 2. Locate old_string, enforce uniqueness, and apply the replacement.
+        // An empty body arrives as the IDE's empty reply, not as "".
+        let current = if get.output == EMPTY_REPLY { "" } else { get.output.as_str() };
         let (updated, replaced) =
-            match apply_code_edit(&get.output, old_string, new_string, replace_all, &loc_label) {
+            match apply_code_edit(current, old_string, new_string, replace_all, &loc_label) {
                 Ok(v) => v,
                 Err(msg) => return ToolResult::failure(msg),
             };
@@ -402,8 +457,11 @@ impl Tool for GetSelectedText {
     fn name(&self) -> &'static str { "get_selected_text" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Selected Text") }
     fn description(&self) -> &'static str {
-        "Returns the currently selected text in the Xojo IDE code editor, \
-         along with selection start position and length."
+        "Returns the text selected in the Xojo IDE's code editor, after a first line \
+         'start=<offset> length=<n>' giving its position in characters from the start of the \
+         item's code. Fails if no code editor is active. Use it to see what the user has \
+         highlighted, or to find offsets for set_selected_text; to read a whole item, use \
+         get_code. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -429,26 +487,32 @@ impl Tool for SetSelectedText {
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Replace Selected Text", true, false) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Replaces the currently selected text in the Xojo IDE code editor with new text. \
-         Can optionally set selection position first."
+        "Replaces the selection in the Xojo IDE's code editor with text, or inserts it at \
+         the cursor when nothing is selected. Pass selection_start to select a range first; \
+         otherwise it acts on whatever the user or an earlier call left selected. Fails if no \
+         code editor is active. For a change you can describe by its content, edit_code is \
+         more reliable because it does not depend on offsets. The change stays in the IDE \
+         until save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "text",
             param_type: ParamType::String,
-            description: "Replacement text to insert",
+            description: "Text to put in place of the selection",
             required: true,
             default: None,
         }, ToolParam {
             name: "selection_start",
             param_type: ParamType::Integer,
-            description: "Character offset to set before replacing. Skipped if -1.",
+            description: "Character offset, from the start of the item's code, to select from \
+                          before replacing. Omit (or -1) to use the current selection.",
             required: false,
             default: None,
         }, ToolParam {
             name: "selection_length",
             param_type: ParamType::Integer,
-            description: "Characters to select before replacing",
+            description: "Characters to select from selection_start. Default 0, which inserts \
+                          without replacing anything. Ignored without selection_start.",
             required: false,
             default: None,
         }];
@@ -485,22 +549,27 @@ impl Tool for BuildProject {
     fn name(&self) -> &'static str { "build_project" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Build Project", false, true) }
     fn description(&self) -> &'static str {
-        "Builds the current Xojo project. Returns the path to the built application \
-         on success, or build errors on failure."
+        "Builds the open Xojo project into a standalone app. Call it only when the user asks \
+         for a build, and offer run_project first: a run catches errors a build misses. \
+         Returns 'Build succeeded.' or the compile errors with their locations; runtime \
+         errors are not visible. A success has been reported with no app written, so confirm \
+         the built app exists on disk. Waits up to 30 minutes; a build that outlasts that \
+         keeps going, and xmcp refuses other requests until the IDE answers. Needs the Xojo \
+         IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "build_type",
             param_type: ParamType::Integer,
-            description: "Build target type (0=Default, 5=macOS Cocoa, 9=Windows 32-bit, \
-                          14=Windows 64-bit, 16=Linux 32-bit, 17=Linux 64-bit, 18=Linux ARM, \
-                          24=macOS Universal).",
+            description: "Build target: 0 = default (the default), 5 = macOS Cocoa, \
+                          9 = Windows 32-bit, 14 = Windows 64-bit, 16 = Linux 32-bit, \
+                          17 = Linux 64-bit, 18 = Linux ARM, 24 = macOS Universal.",
             required: false,
             default: None,
         }, ToolParam {
             name: "reveal",
             param_type: ParamType::Boolean,
-            description: "Whether to reveal built app in Finder/Explorer.",
+            description: "Show the built app in Finder afterwards. Default false.",
             required: false,
             default: None,
         }];
@@ -531,7 +600,15 @@ pub struct RunProject;
 impl Tool for RunProject {
     fn name(&self) -> &'static str { "run_project" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run Project", false, false) }
-    fn description(&self) -> &'static str { "Runs the current Xojo project in debug mode." }
+    fn description(&self) -> &'static str {
+        "Runs the open Xojo project in the IDE's debugger. Call it only when the user asks \
+         to run. Returns 'Project launched in debug mode.' once the app starts, or the \
+         compile errors that stopped it. Runtime exceptions are caught by the IDE's debugger \
+         and are invisible here, so ask the user what they see. In an Agentic Mode project, \
+         agentic_run returns the compiler's errors with their locations instead. Step through \
+         the session with debug_control and end it with stop_project. Waits up to 30 \
+         seconds. Needs the Xojo IDE running with the project open."
+    }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let script = "DoCommand \"RunApp\"\nPrint \"\"";
@@ -551,7 +628,12 @@ pub struct StopProject;
 impl Tool for StopProject {
     fn name(&self) -> &'static str { "stop_project" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Stop Debug Session", true, true) }
-    fn description(&self) -> &'static str { "Stops the currently running Xojo debug session." }
+    fn description(&self) -> &'static str {
+        "Ends the Xojo IDE's debug session by killing the app it is running, as started by \
+         run_project or agentic_run. The app is stopped outright, so anything it has not \
+         saved is lost. Returns 'Debug session stopped.' whether or not anything was \
+         running. Needs the Xojo IDE running with the project open."
+    }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let script = "DoCommand \"Kill\"\nPrint \"Debug session stopped.\"";
@@ -577,8 +659,13 @@ impl Tool for CreateProjectItem {
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Create Project Item", false, false) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Creates a new project item in the Xojo IDE. First navigates to the target \
-         location (if specified), then creates the item."
+        "Creates a new item in the open Xojo project with the IDE's own command for it, \
+         inside parent_location (selected first) or the currently selected item, and returns \
+         the new item's location. A new method or property is blank and untitled (e.g. \
+         'Window1.Untitled') and stays selected, so name and type it with set_declaration \
+         straight afterwards, with no location. Use this, never a hand edit of the \
+         .xojo_project file, to add items: the IDE assigns their IDs. The item stays in the \
+         IDE until save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -594,7 +681,8 @@ impl Tool for CreateProjectItem {
         }, ToolParam {
             name: "parent_location",
             param_type: ParamType::String,
-            description: "Dot-separated path to navigate to first (e.g. 'Module1')",
+            description: "Dot-separated path of the item to create inside, e.g. 'Module1' or \
+                          'Window1'; selected first. Omit to use the current selection.",
             required: false,
             default: None,
         }];
@@ -645,7 +733,8 @@ impl Tool for RunIdeScript {
          commands via DoShellCommand. Prefer a dedicated tool when one fits \
          (list_project_items, get_code, build_project, etc.); use this only \
          when nothing else does, and pause before running anything that \
-         quits the IDE, deletes items, or touches the shell."
+         quits the IDE, deletes items, or touches the shell. A runtime error comes back \
+         with no message or line number. Needs the Xojo IDE running."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -657,7 +746,10 @@ impl Tool for RunIdeScript {
         }, ToolParam {
             name: "timeout",
             param_type: ParamType::Integer,
-            description: "Timeout in milliseconds (default 10000)",
+            description: "Milliseconds to wait for the answer. Default 10000. A script that \
+                          runs longer is not stopped: xmcp keeps the connection open and \
+                          refuses other requests until it answers, so set this high enough \
+                          up front.",
             required: false,
             default: None,
         }];
@@ -684,8 +776,12 @@ impl Tool for GetProjectInfo {
     fn name(&self) -> &'static str { "get_project_info" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get Project Info") }
     fn description(&self) -> &'static str {
-        "Returns information about the currently open Xojo project including path, \
-         Xojo IDE version, and selected item."
+        "Returns facts about the project open in the Xojo IDE, one per line: the \
+         .xojo_project path, the Project Directory holding its .xojo_code and .xojo_window \
+         files, the Xojo version, the selected location and its type, and whether Agentic \
+         Mode was on at the last save. Call it first when working on files on disk, since \
+         lint_project_file and direct edits need absolute paths. Needs the Xojo IDE running \
+         with the project open."
     }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -735,8 +831,13 @@ impl Tool for RevertProject {
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Revert Project", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Reverts the current Xojo project to the version saved on disk. \
-         Use after modifying project files directly."
+        "Closes the open Xojo project without saving and reopens it from disk, so the IDE \
+         picks up project files edited directly. Every unsaved change in the IDE is \
+         discarded, the user's included, so ask the user before calling it; the IDE may also \
+         show a prompt they must accept. Use it after editing .xojo_code or .xojo_window \
+         files on disk, and do not save_project in between, which would overwrite those \
+         edits. Not needed in an Agentic Mode project, where Xojo reloads edited files by \
+         itself. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -758,8 +859,13 @@ impl Tool for SaveProject {
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Save Project", true, true) }
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Saves the current Xojo project to disk via IDE scripting \
-         (DoCommand \"SaveFile\")."
+        "Saves the open Xojo project, writing the IDE's in-memory copy over the project's \
+         files on disk. Returns 'Project saved.', or 'No changes to save.' when no file \
+         changed within two seconds. Call it when IDE-side edits (set_code, edit_code, \
+         create_project_item and the like) should persist, and before editing on disk a file \
+         you changed through the IDE. Never call it between editing a file on disk and \
+         revert_project: it would overwrite the disk edit. Needs the Xojo IDE running with \
+         the project open."
     }
     fn parameters(&self) -> &[ToolParam] { &[] }
     fn run(&self, _args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -836,20 +942,24 @@ impl Tool for GetItemDescription {
     // Writes when given a value, so it is a mutating tool, as property_value is.
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
-        "Gets or sets the description of the currently selected project item \
-         (method, property, event, etc.)."
+        "Reads or sets the Description of a project item or member (the note shown in the \
+         IDE's Inspector, not its code): the one at location, or the selected one. Without \
+         value it returns the description; with value it replaces it and returns 'OK', and an \
+         empty value clears it. Giving a location also selects that item. A set stays in the \
+         IDE until save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "location",
             param_type: ParamType::String,
-            description: "Dot-separated path to navigate to first",
+            description: "Dot-separated path, e.g. 'Module1.Helper'. Omit for the selected \
+                          item.",
             required: false,
             default: None,
         }, ToolParam {
             name: "value",
             param_type: ParamType::String,
-            description: "If provided, sets description; if omitted, reads it",
+            description: "New description, replacing the old one. Omit to read it instead.",
             required: false,
             default: None,
         }];
@@ -915,19 +1025,23 @@ impl Tool for ConstantValue {
         "Gets or sets the value of a project constant in the Xojo IDE. \
          The constant must already exist in the project. A set is read back, so a name \
          that matches no constant is reported rather than silently ignored; a get of such \
-         a name returns an empty value, the same as an empty constant."
+         a name returns an empty value, the same as an empty constant. It changes the value \
+         only: to rename or retype a constant, edit its #tag Constant line on disk \
+         (scaffold_code_block writes one). A set stays in the IDE until save_project. Needs \
+         the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "name",
             param_type: ParamType::String,
-            description: "Simple or fully qualified constant name (e.g. 'kVersion' or 'App.kVersion')",
+            description: "Constant name, fully qualified, e.g. 'App.kVersion' or \
+                          'Module1.kLimit'; a bare name may not resolve",
             required: true,
             default: None,
         }, ToolParam {
             name: "value",
             param_type: ParamType::String,
-            description: "If provided, sets the constant; if omitted, returns current value",
+            description: "New value, as text. Omit to read the current value instead.",
             required: false,
             default: None,
         }];
@@ -967,7 +1081,9 @@ impl Tool for PropertyValue {
          IMPORTANT LIMITS: it reaches only properties that are part of the Xojo framework, \
          NOT properties you added yourself, and it CANNOT address controls on a window \
          (there is no 'Window1.PushButton1.Caption'). Values are always strings, even for \
-         numeric or boolean properties."
+         numeric or boolean properties. A set returns 'OK' without reading the value back, \
+         so get it afterwards to confirm it took. A set stays in the IDE until \
+         save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -1032,13 +1148,17 @@ impl Tool for SetDeclaration {
          creates a blank, untyped property, and this is what names and types it. \
          NOTE the two argument meanings — for a METHOD, `parameters` is the parameter list \
          ('x As Integer, y As Integer') and `data_type` is the return type; for a PROPERTY, \
-         `parameters` is the DEFAULT VALUE and `data_type` is the property's type."
+         `parameters` is the DEFAULT VALUE and `data_type` is the property's type. Every \
+         field is replaced, so pass the current values of those you are keeping. Returns \
+         'OK: <location>'. A constant or other item kind is refused with an error that names \
+         it, as is a location that does not exist. The change stays in the IDE until \
+         save_project. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "name",
             param_type: ParamType::String,
-            description: "New name for the method or property",
+            description: "The method's or property's name, new or unchanged",
             required: true,
             default: None,
         }, ToolParam {
@@ -1064,7 +1184,7 @@ impl Tool for SetDeclaration {
         }, ToolParam {
             name: "implements",
             param_type: ParamType::String,
-            description: "Interface member this implements, e.g. 'Readable.Read'",
+            description: "Interface member this implements, e.g. 'Readable.Read'. Omit if none.",
             required: false,
             default: None,
         }, ToolParam {
@@ -1141,13 +1261,17 @@ impl Tool for AnalyzeProject {
         "Analyzes the current Xojo project for compile errors and warnings without \
          building. Reports unused variables, type mismatches, deprecated API usage, \
          and other issues. Pass scope=\"item\" to analyze only the currently selected \
-         item (faster); default is \"project\" to analyze everything."
+         item (faster); default is \"project\" to analyze everything. Returns 'No errors or \
+         warnings found.' or one line per issue with its type, message and location. Any \
+         error makes the call fail; warnings alone do not. Nothing is built, run or changed. \
+         Waits up to one minute. Needs the Xojo IDE running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "scope",
             param_type: ParamType::String,
-            description: "Scope to analyze: \"project\" (default) or \"item\" (currently selected item only).",
+            description: "\"project\" (default) or \"item\", the item selected in the \
+                          Navigator; select it first with select_project_item.",
             required: false,
             default: None,
         }];
@@ -1191,7 +1315,10 @@ impl Tool for DebugControl {
         "Controls the Xojo debug session. Actions: \"step_over\" (execute current \
          line), \"step_into\" (step into method call), \"step_out\" (step out of \
          current method), \"resume\" (continue running), \"pause\" (pause execution). \
-         Requires an active debug session started with run_project."
+         Requires an active debug session started with run_project; without one the call \
+         fails. It returns once the IDE accepts the command and reports neither the new line \
+         nor variable values: the user sees those in the IDE's debugger. Needs the Xojo IDE \
+         running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {

@@ -388,7 +388,11 @@ On releases before 2026r3, window and control event handlers and layout are not
 reachable through any path — edit the `.xojo_window` file directly (see "How to
 edit code" above). Layout and control properties are never reachable.
 
-`list_project_items` does not list events — only methods, properties, and constants appear as children.
+`list_project_items` lists project items and folders, not members. On Xojo
+2026r3 an item's methods, properties, constants and events never appear under
+it (verified: a module holding a method lists as empty), and an empty listing
+looks the same as a path that does not exist. Read members from the item's
+`.xojo_code` or `.xojo_window` file instead.
 
 ### IDE scripts: how `run_ide_script` answers
 

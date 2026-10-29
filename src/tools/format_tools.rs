@@ -222,7 +222,10 @@ impl Tool for ScaffoldCodeBlock {
          the way the IDE does. It only returns text; insert it yourself, in the block order \
          usage-guide.md's Format Rules give and before #tag ViewBehavior, then check the file \
          with lint_project_file. A control_event result is a whole #tag Events block: if the \
-         control already has one, insert just its inner #tag Event … #tag EndEvent."
+         control already has one, insert just its inner #tag Event … #tag EndEvent. An \
+         argument that does not apply to block_kind, a name that is not a Xojo identifier, or \
+         a constant value it cannot escape safely is an error. Reads no files and needs no \
+         IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[
@@ -524,14 +527,17 @@ impl Tool for LintProjectFile {
          can silently truncate it, and things Xojo loads but resolves on its own terms: \
          blocks out of order or after #tag ViewBehavior, and a Flags value that disagrees \
          with the visibility keyword, where the warning says which visibility Xojo will use. \
-         Run it after editing a project file directly and before revert_project. It reads \
-         the file only and needs no IDE."
+         Run it after editing a project file directly and before revert_project. Returns \
+         'No issues found' or a count and one 'error|warning: line <n>: <message>' per \
+         finding; findings, errors included, are a normal result, and only a file it cannot \
+         read or one of another type fails the call. It reads the file only and needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
             name: "path",
             param_type: ParamType::String,
-            description: "Absolute path to the .xojo_code or .xojo_window file",
+            description: "Absolute path to the .xojo_code or .xojo_window file; \
+                          get_project_info gives the project directory",
             required: true,
             default: None,
         }];
