@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -20,6 +21,16 @@ const AFTER_END_MARKER: Duration = Duration::from_millis(50);
 const SPLIT_REPLY_WINDOW: Duration = Duration::from_millis(250);
 /// How long a part already half read may take to finish once the answer ended.
 const PARTIAL_PART: Duration = Duration::from_millis(1000);
+/// How quiet a parked connection must be after its answer ended before it is
+/// closed, so a trailing warning is in first.
+const QUIET_AFTER_ANSWER: Duration = Duration::from_millis(250);
+/// How long a parked connection is held before it is closed regardless.
+const PENDING_GIVE_UP: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// Said with every message about a request the IDE still owes an answer to.
+const DO_NOT_QUIT: &str = "Do not quit or restart Claude Code (or whichever MCP client you \
+    use) until then: quitting closes this connection, and on macOS the Xojo IDE crashes if \
+    it answers over a connection that has been closed.";
 
 /// Resolve the IPC socket file name.
 ///
@@ -187,9 +198,125 @@ fn summarize_errors(errors: &[String]) -> String {
         .join("; ")
 }
 
+/// Parse every whole NUL-terminated frame from `cursor` on, advancing it past
+/// them, and hand each readable one to `f`. An unreadable frame is skipped,
+/// never fatal: the caller is reading from an IDE that may still be writing.
+fn take_frames(buffer: &[u8], cursor: &mut usize, verbose: bool, mut f: impl FnMut(Value)) {
+    while let Some(rel_pos) = buffer[*cursor..].iter().position(|&b| b == 0) {
+        let frame_end = *cursor + rel_pos;
+        let frame = std::str::from_utf8(&buffer[*cursor..frame_end])
+            .ok()
+            .map(str::trim)
+            .and_then(|s| (!s.is_empty()).then(|| serde_json::from_str::<Value>(s)));
+        *cursor = frame_end + 1;
+        match frame {
+            None => {}
+            Some(Ok(v)) => {
+                if verbose {
+                    eprintln!("IDE response frame: {v}");
+                }
+                f(v);
+            }
+            Some(Err(e)) if verbose => eprintln!("Skipped an unreadable IPC frame: {e}"),
+            Some(Err(_)) => {}
+        }
+    }
+}
+
+/// A request the IDE accepted but had not finished answering when its caller
+/// gave up, and the connection it arrived on.
+///
+/// The connection is held open rather than closed. The IDE runs scripts one at
+/// a time on its main thread, so a build or a modal dialog can leave a request
+/// unanswered for minutes; when it does answer, a write into a closed socket
+/// raises SIGPIPE, which the Xojo IDE does not ignore -- it dies with no crash
+/// report (traced by upstream XMCP). `drain_pending` releases the connection
+/// once the IDE is finished with it.
+struct Pending {
+    stream: UnixStream,
+    tag: String,
+    /// The script as the caller wrote it, for naming the request when refusing.
+    script: String,
+    marker_expected: bool,
+    /// Bytes read but not yet framed; a part can only be read whole.
+    buffer: Vec<u8>,
+    since: Instant,
+    last_data: Instant,
+    answer_ended: bool,
+}
+
+/// Why a parked request was let go, or `None` while the IDE still owes it.
+enum Release {
+    Answered,
+    Closed,
+    GaveUp,
+}
+
+impl Pending {
+    /// Read what the IDE has written so far and decide whether the answer is
+    /// complete, by the live reader's rule: its end marker, or an error that
+    /// stopped the script (or, with no marker coming, any part that is not
+    /// warnings alone) -- and then a quiet spell, so a trailing warning is in
+    /// before the close. What the parts say is discarded; their caller gave
+    /// up long ago.
+    fn poll(&mut self, verbose: bool) -> Option<Release> {
+        if self.stream.set_nonblocking(true).is_err() {
+            return Some(Release::Closed);
+        }
+        let mut read_buf = [0u8; 4096];
+        loop {
+            match self.stream.read(&mut read_buf) {
+                Ok(0) => return Some(Release::Closed),
+                Ok(n) => {
+                    self.buffer.extend_from_slice(&read_buf[..n]);
+                    self.last_data = Instant::now();
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return Some(Release::Closed),
+            }
+        }
+
+        let mut cursor = 0;
+        let (tag, marker_expected) = (self.tag.clone(), self.marker_expected);
+        let mut ended = self.answer_ended;
+        take_frames(&self.buffer, &mut cursor, verbose, |response| {
+            if response.get("tag").and_then(Value::as_str) != Some(tag.as_str()) {
+                return;
+            }
+            if marker_expected {
+                ended |= reply::is_end_marker(&response, &tag) || reply::stops_script(&response);
+            } else {
+                ended |= reply::kind(&response) != reply::Kind::Warning;
+            }
+        });
+        self.buffer.drain(..cursor);
+        self.answer_ended = ended;
+
+        if self.answer_ended {
+            // Our server only wakes on requests, so rather than turn the next
+            // one away over a fraction of a second, wait out the quiet spell.
+            let quiet = self.last_data.elapsed();
+            if quiet < QUIET_AFTER_ANSWER {
+                std::thread::sleep(QUIET_AFTER_ANSWER - quiet);
+                return self.poll(verbose);
+            }
+            return Some(Release::Answered);
+        }
+        // The one release that closes a connection the IDE may still answer:
+        // without a bound, a request it never answers would hold its only IPC
+        // connection for as long as xmcp lives.
+        if self.since.elapsed() > PENDING_GIVE_UP {
+            return Some(Release::GaveUp);
+        }
+        None
+    }
+}
+
 pub struct Communicator {
     tag_counter: AtomicU64,
     verbose: bool,
+    pending: Mutex<Vec<Pending>>,
 }
 
 impl Communicator {
@@ -197,7 +324,65 @@ impl Communicator {
         Self {
             tag_counter: AtomicU64::new(0),
             verbose,
+            pending: Mutex::new(Vec::new()),
         }
+    }
+
+    fn pending(&self) -> std::sync::MutexGuard<'_, Vec<Pending>> {
+        // A panic while the lock was held leaves the list itself intact.
+        self.pending.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Release every parked request the IDE has finished with, and return a
+    /// summary of those still waiting, one line each, or `None` if none are.
+    fn drain_pending(&self) -> Option<String> {
+        let mut pending = self.pending();
+        pending.retain_mut(|p| match p.poll(self.verbose) {
+            None => true,
+            Some(why) => {
+                if self.verbose {
+                    let reason = match why {
+                        Release::Answered => "the IDE answered it (reply discarded)",
+                        Release::Closed => "the IDE closed the connection",
+                        Release::GaveUp => "it was parked for over two hours",
+                    };
+                    eprintln!("IDE request {}: released, {reason}.", p.tag);
+                }
+                false
+            }
+        });
+        if pending.is_empty() {
+            return None;
+        }
+        Some(
+            pending
+                .iter()
+                .map(|p| {
+                    let preview: String = p.script.split_whitespace().collect::<Vec<_>>().join(" ");
+                    let preview = match preview.char_indices().nth(77) {
+                        Some((i, _)) => format!("{}...", &preview[..i]),
+                        None => preview,
+                    };
+                    format!("  {} (sent {}s ago): {preview}", p.tag, p.since.elapsed().as_secs())
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    }
+
+    /// Keep a delivered request's connection open until the IDE has answered.
+    fn park(&self, stream: UnixStream, tag: &str, script: &str, marker_expected: bool, unframed: &[u8]) {
+        let now = Instant::now();
+        self.pending().push(Pending {
+            stream,
+            tag: tag.to_string(),
+            script: script.to_string(),
+            marker_expected,
+            buffer: unframed.to_vec(),
+            since: now,
+            last_data: now,
+            answer_ended: false,
+        });
     }
 
     /// Send an IDE script and receive the response with a custom timeout.
@@ -206,6 +391,18 @@ impl Communicator {
         script: &str,
         timeout: Duration,
     ) -> Result<Value, String> {
+        // While the IDE still owes an answer to an earlier request it is busy
+        // running that script; a new request would only queue behind it and
+        // time out too. Say so instead.
+        if let Some(summary) = self.drain_pending() {
+            return Err(format!(
+                "The Xojo IDE is still busy with an earlier request and has not finished \
+                 answering it:\n{summary}\nNo new request was sent. Something is keeping the \
+                 IDE busy -- usually a build, or a dialog in the IDE waiting for a click. Let it \
+                 finish or click the dialog, then try again. {DO_NOT_QUIT}"
+            ));
+        }
+
         let tag = self.next_tag();
 
         // Every request must be answerable: the IDE replies once per Print and
@@ -244,20 +441,21 @@ impl Communicator {
                     continue;
                 }
 
-                match self.try_send_receive(path, &payload, &tag, timeout, marker_expected) {
+                match self.try_send_receive(path, &payload, &tag, script, timeout, marker_expected) {
                     Ok(response) => {
                         return Ok(response);
                     }
+                    Err(e) if e.script_sent => {
+                        // Something accepted the script. Moving to the next
+                        // candidate would hand the same command to a second
+                        // IDE; retrying would hand it to this one twice. What
+                        // the earlier attempts said -- usually "not found" --
+                        // is beside the point now, and would bury the message.
+                        return Err(e.message);
+                    }
                     Err(e) => {
-                        let sent = e.script_sent;
                         last_error_retryable = e.is_retryable();
                         all_errors.push(e.message);
-                        if sent {
-                            // Something accepted the script. Moving to the next
-                            // candidate would hand the same command to a second
-                            // IDE; retrying would hand it to this one twice.
-                            break;
-                        }
                     }
                 }
             }
@@ -276,6 +474,7 @@ impl Communicator {
         path: &str,
         payload: &[u8],
         tag: &str,
+        script: &str,
         timeout: Duration,
         marker_expected: bool,
     ) -> Result<Value, AttemptError> {
@@ -287,12 +486,19 @@ impl Communicator {
             .set_read_timeout(Some(Duration::from_millis(100)))
             .ok();
 
-        stream
-            .write_all(payload)
-            .map_err(|e| AttemptError::after_send(format!("IPCSocket write failed: {e}")))?;
-        stream
-            .flush()
-            .map_err(|e| AttemptError::after_send(format!("IPCSocket flush failed: {e}")))?;
+        // A write that fails partway may still have delivered the request, so
+        // it is parked like any other delivered request rather than dropped:
+        // if the connection is really broken, the next drain finds it closed
+        // and releases it.
+        if let Err(e) = stream.write_all(payload).and_then(|()| stream.flush()) {
+            self.park(stream, tag, script, marker_expected, &[]);
+            return Err(AttemptError::after_send(format!(
+                "Writing the request to the Xojo IDE failed partway ({e}). It may or may not \
+                 have arrived, so it is not being resent, and the connection is kept open in \
+                 case the IDE answers. Further requests are refused until it does or the \
+                 connection is found closed. {DO_NOT_QUIT}"
+            )));
+        }
 
         // One answer arrives as several parts under our tag -- one per Print,
         // then any compiler warning -- each sent the moment it is produced, so a
@@ -332,51 +538,35 @@ impl Communicator {
                     buffer.extend_from_slice(&read_buf[..n]);
                 }
                 Err(ref e)
-                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::Interrupted
+                    ) =>
                 {
                     continue;
                 }
                 Err(e) => {
-                    return Err(AttemptError::after_send(format!(
-                        "IPCSocket read failed: {e}"
-                    )));
+                    // Stop reading; what has arrived decides below whether the
+                    // answer is complete or the request parks. Returning here
+                    // would drop a connection the IDE may still answer on.
+                    if self.verbose {
+                        eprintln!("IDE request {tag}: reading failed ({e}).");
+                    }
+                    break;
                 }
             }
 
-            // Consume NUL-delimited frames in place, advancing a cursor rather
-            // than reallocating the buffer per frame.
-            while let Some(rel_pos) = buffer[cursor..].iter().position(|&b| b == 0) {
-                let frame_end = cursor + rel_pos;
-                let frame = std::str::from_utf8(&buffer[cursor..frame_end])
-                    .ok()
-                    .map(str::trim)
-                    .and_then(|s| (!s.is_empty()).then(|| serde_json::from_str::<Value>(s)));
-                cursor = frame_end + 1;
-
-                // An unreadable frame is skipped, not fatal: returning here
-                // would close the socket on an IDE still writing.
-                let response = match frame {
-                    None => continue,
-                    Some(Ok(v)) => v,
-                    Some(Err(e)) => {
-                        if self.verbose {
-                            eprintln!("Skipped an unreadable IPC frame: {e}");
-                        }
-                        continue;
-                    }
-                };
-                if self.verbose {
-                    eprintln!("IDE response frame: {response}");
+            take_frames(&buffer, &mut cursor, self.verbose, |response| {
+                if response.get("tag").and_then(Value::as_str) != Some(tag) {
+                    // Not our tag — a stale answer for another request.
+                    return;
                 }
-                if response.get("tag").and_then(|t| t.as_str()) != Some(tag) {
-                    // Not our tag — discard orphaned frame and keep reading.
-                    continue;
-                }
-
                 if reply::is_end_marker(&response, tag) {
                     saw_marker = true;
                     collect_until = Instant::now() + AFTER_END_MARKER;
-                    continue;
+                    return;
                 }
                 saw_stop |= reply::stops_script(&response);
                 let kind = reply::kind(&response);
@@ -390,7 +580,7 @@ impl Communicator {
                     window_started = true;
                     collect_until = Instant::now() + SPLIT_REPLY_WINDOW;
                 }
-            }
+            });
 
             // Periodic compaction: reclaim consumed prefix once it dominates
             // the buffer. Bounded total shift cost — each byte moves at most
@@ -426,14 +616,19 @@ impl Communicator {
                  request is not being sent again."
             )));
         }
-        // Accepted, not finished: the IDE is still running the script. Dropping
-        // the socket here still risks the SIGPIPE above if the IDE answers
-        // later; keeping it open across calls (upstream's "parking") is not
-        // done yet. A long build gets a long timeout to make this rare.
+        // Accepted, not finished: the IDE is still running the script, even if
+        // part of its answer is in. Do not close the connection -- the IDE will
+        // write the rest when it is done. Park it, with whatever was read but
+        // not yet framed: the limit can fall mid-part, and if that part is the
+        // marker, dropping its first half would leave the parked request unable
+        // to see its own end.
+        self.park(stream, tag, script, marker_expected, &buffer[cursor..]);
         Err(AttemptError::after_send(format!(
-            "No complete answer from {path} within {} ms: the Xojo IDE accepted the request \
-             but has not finished it. It is most likely busy -- a build, or a dialog waiting \
-             for a click -- and will finish regardless, so the request is not being sent again.",
+            "The Xojo IDE accepted the request but has not finished answering it within {} ms. \
+             It is most likely busy -- a build, or a dialog waiting for a click -- and it will \
+             finish the request regardless, so it is not being sent again. The connection is \
+             kept open so the IDE can answer safely; that answer will be discarded. Further \
+             requests are refused until the IDE has answered. {DO_NOT_QUIT}",
             timeout.as_millis()
         )))
     }
@@ -447,8 +642,12 @@ impl Communicator {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttemptError, DEFAULT_SOCKET_NAME, candidate_paths, resolve_socket_name, summarize_errors,
+        AttemptError, Communicator, DEFAULT_SOCKET_NAME, Release, candidate_paths, resolve_socket_name,
+        summarize_errors,
     };
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn a_script_already_sent_is_never_retried() {
@@ -578,5 +777,73 @@ mod tests {
             candidate_paths("XojoIDE", Some("".into()), Some("".into())).len(),
             3
         );
+    }
+
+    /// A parked request on one end of a socket pair; the other end plays the IDE.
+    fn parked(script: &str) -> (Communicator, UnixStream) {
+        let (ours, ide) = UnixStream::pair().unwrap();
+        let c = Communicator::new(false);
+        c.park(ours, "xmcp_7", script, true, &[]);
+        (c, ide)
+    }
+
+    fn frame(ide: &mut UnixStream, json: &str) {
+        ide.write_all(json.as_bytes()).unwrap();
+        ide.write_all(&[0]).unwrap();
+    }
+
+    fn poll_first(c: &Communicator) -> Option<Release> {
+        c.pending()[0].poll(false)
+    }
+
+    #[test]
+    fn a_parked_request_blocks_new_ones_and_names_itself() {
+        let (c, _ide) = parked("DoCommand \"BuildApp\"");
+        let err = c
+            .send_and_receive_with_timeout("Print 1", Duration::from_millis(100))
+            .unwrap_err();
+        assert!(err.contains("still busy"), "{err}");
+        assert!(err.contains("xmcp_7 (sent 0s ago): DoCommand \"BuildApp\""), "{err}");
+        assert!(err.contains("Do not quit"), "{err}");
+        assert_eq!(c.pending().len(), 1, "refusing must not release it");
+    }
+
+    #[test]
+    fn output_alone_does_not_end_a_parked_answer() {
+        let (c, mut ide) = parked("Print 1");
+        frame(&mut ide, r#"{"tag":"xmcp_7","response":"1"}"#);
+        assert!(poll_first(&c).is_none(), "the marker is still to come");
+    }
+
+    #[test]
+    fn the_marker_releases_a_parked_request_after_a_quiet_spell() {
+        let (c, mut ide) = parked("Print 1");
+        frame(&mut ide, r#"{"tag":"other","response":"xmcp-end:xmcp_7"}"#);
+        assert!(poll_first(&c).is_none(), "another tag says nothing about ours");
+        // The marker arrives in two pieces; only the whole part counts.
+        ide.write_all(br#"{"tag":"xmcp_7","respo"#).unwrap();
+        assert!(poll_first(&c).is_none());
+        ide.write_all(br#"nse":"xmcp-end:xmcp_7"}"#).unwrap();
+        ide.write_all(&[0]).unwrap();
+        let start = Instant::now();
+        assert!(matches!(poll_first(&c), Some(Release::Answered)));
+        assert!(start.elapsed() >= Duration::from_millis(200), "waited for a trailing warning");
+        assert!(c.drain_pending().is_none(), "released");
+        assert!(c.pending().is_empty());
+    }
+
+    #[test]
+    fn an_error_that_stops_the_script_ends_a_parked_answer() {
+        let (c, mut ide) = parked("Print x");
+        frame(&mut ide, r#"{"tag":"xmcp_7","response":{"scriptError":[{"type":"scriptRuntimeError"}]}}"#);
+        assert!(matches!(poll_first(&c), Some(Release::Answered)));
+    }
+
+    #[test]
+    fn a_closed_connection_releases_a_parked_request() {
+        let (c, ide) = parked("Print 1");
+        drop(ide);
+        assert!(matches!(poll_first(&c), Some(Release::Closed)));
+        assert!(c.drain_pending().is_none());
     }
 }

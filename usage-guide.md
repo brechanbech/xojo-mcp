@@ -405,6 +405,24 @@ is how xmcp knows the whole answer has arrived. Two consequences:
 A runtime error comes back with no message and no line number — the IDE gives
 none. To find it, split the script or `Print` values before the line you suspect.
 
+### While the IDE is still answering a request, do not quit or restart the client
+
+Every IDE tool waits a limited time — two minutes for `build_project`, one for
+`analyze_project`, 30 seconds for `run_project`, 10 seconds for most others, and
+whatever `timeout` you pass to `run_ide_script`. When a request runs past its
+limit, the IDE is not stopped: it finishes the work, a build or a script waiting
+on a dialog. xmcp stops waiting but keeps the
+connection open until the IDE answers, and until then turns down new requests,
+naming the one still outstanding. A timeout therefore does not mean the request
+failed.
+
+Both messages say not to quit or restart Claude Code (or whichever MCP client is
+in use) meanwhile. Take that literally: quitting stops xmcp, which closes the
+connection, and on macOS the Xojo IDE crashes when it then answers. Tell the user
+to let the build finish or click the dialog, and wait for the refusals to stop. For
+a long-running `run_ide_script`, pass a larger `timeout` up front instead of
+letting it run over.
+
 ### Parallel tool calls are not supported
 
 The Xojo IDE accepts only one IPC connection at a time. Always use sequential tool calls.
