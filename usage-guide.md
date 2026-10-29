@@ -390,6 +390,21 @@ edit code" above). Layout and control properties are never reachable.
 
 `list_project_items` does not list events — only methods, properties, and constants appear as children.
 
+### IDE scripts: how `run_ide_script` answers
+
+The IDE answers once per `Print`, and not at all for a script without one. xmcp
+appends a final `Print` of its own to every script, so a script that prints
+nothing still answers ("The script ran but produced no value"), and that last line
+is how xmcp knows the whole answer has arrived. Two consequences:
+
+- **Print once.** With several `Print`s you get the first one that says
+  something; a compile or runtime error outranks printed output.
+- **Do not leave a script early with `Return`.** It never reaches xmcp's final
+  line, so xmcp waits for the full timeout before giving up on it.
+
+A runtime error comes back with no message and no line number — the IDE gives
+none. To find it, split the script or `Print` values before the line you suspect.
+
 ### Parallel tool calls are not supported
 
 The Xojo IDE accepts only one IPC connection at a time. Always use sequential tool calls.

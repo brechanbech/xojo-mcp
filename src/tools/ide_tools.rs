@@ -631,8 +631,12 @@ impl Tool for RunIdeScript {
     fn name(&self) -> &'static str { "run_ide_script" }
     fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run IDE Script", true, false).open_world() }
     fn description(&self) -> &'static str {
-        "Executes an arbitrary Xojo IDE script. Use Print to return values. \
-         Powerful escape hatch — IDE scripting can quit Xojo, close/reopen \
+        "Executes an arbitrary Xojo IDE script. Use Print to return a value, once: \
+         with several Prints the first that says something is returned, and an error \
+         outranks output. A script that prints nothing reports that it ran. Do not \
+         leave the script early with Return: xmcp appends a final line that tells it \
+         the script finished, and a script that never reaches it is waited on until \
+         the timeout. Powerful escape hatch — IDE scripting can quit Xojo, close/reopen \
          projects, create or delete items, write files, and invoke shell \
          commands via DoShellCommand. Prefer a dedicated tool when one fits \
          (list_project_items, get_code, build_project, etc.); use this only \
@@ -658,7 +662,12 @@ impl Tool for RunIdeScript {
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
         let script = arg_str(args, "script", "");
         let timeout_ms = arg_i64(args, "timeout", 10000) as u64;
-        ide_call(ctx, script, Duration::from_millis(timeout_ms))
+        let result = ide_call(ctx, script, Duration::from_millis(timeout_ms));
+        // The IDE's reply to a script that printed nothing is an empty object.
+        if !result.is_error && result.output == "{}" {
+            return ToolResult::success("The script ran but produced no value.");
+        }
+        result
     }
 }
 

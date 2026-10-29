@@ -5,11 +5,21 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use super::reply;
+
 const DEFAULT_SOCKET_NAME: &str = "XojoIDE";
 /// Seven attempts back off for 6.3 s in total (see `retry_pause`). Xojo 2026r3
 /// drops and recreates its socket after each connection and can stay away for
 /// ~3 s, which outlasted the 1.5 s that five attempts gave.
 const MAX_RETRIES: u32 = 7;
+
+/// After the end marker only a compiler warning can follow, and it comes
+/// within a millisecond (measured by upstream XMCP on 2026r2.1).
+const AFTER_END_MARKER: Duration = Duration::from_millis(50);
+/// Where no marker was appended, how long to keep reading after the first part.
+const SPLIT_REPLY_WINDOW: Duration = Duration::from_millis(250);
+/// How long a part already half read may take to finish once the answer ended.
+const PARTIAL_PART: Duration = Duration::from_millis(1000);
 
 /// Resolve the IPC socket file name.
 ///
@@ -198,9 +208,15 @@ impl Communicator {
     ) -> Result<Value, String> {
         let tag = self.next_tag();
 
+        // Every request must be answerable: the IDE replies once per Print and
+        // not at all without one. The appended marker also tells us when the
+        // answer is complete -- see reply.rs.
+        let sent = reply::with_end_marker(script, &tag);
+        let marker_expected = sent.len() != script.len();
+
         // Build protocol v2 payload: handshake + request, NUL-terminated.
         let proto = serde_json::json!({"protocol": 2});
-        let request = serde_json::json!({"tag": tag, "script": script});
+        let request = serde_json::json!({"tag": tag, "script": sent});
         let mut payload = Vec::new();
         payload.extend_from_slice(proto.to_string().as_bytes());
         payload.push(0); // NUL terminator
@@ -228,7 +244,7 @@ impl Communicator {
                     continue;
                 }
 
-                match self.try_send_receive(path, &payload, &tag, timeout) {
+                match self.try_send_receive(path, &payload, &tag, timeout, marker_expected) {
                     Ok(response) => {
                         return Ok(response);
                     }
@@ -261,6 +277,7 @@ impl Communicator {
         payload: &[u8],
         tag: &str,
         timeout: Duration,
+        marker_expected: bool,
     ) -> Result<Value, AttemptError> {
         let mut stream = UnixStream::connect(path).map_err(|e| {
             AttemptError::before_send(format!("IPCSocket connect failed at {path}: {e}"))
@@ -277,29 +294,46 @@ impl Communicator {
             .flush()
             .map_err(|e| AttemptError::after_send(format!("IPCSocket flush failed: {e}")))?;
 
-        // Read response frames until we find one with our tag.
+        // One answer arrives as several parts under our tag -- one per Print,
+        // then any compiler warning -- each sent the moment it is produced, so a
+        // gap between parts says nothing about whether the answer is finished.
+        // It is finished when the end marker arrives (plus a moment for a
+        // trailing warning), or when an error stops the script before the
+        // marker. Closing earlier is what this loop exists to prevent: the IDE
+        // writes the rest into a closed socket and dies of SIGPIPE.
         let deadline = Instant::now() + timeout;
+        let mut collect_until = deadline;
         let mut buffer: Vec<u8> = Vec::with_capacity(8192);
         let mut cursor: usize = 0;
         let mut read_buf = [0u8; 4096];
+        let mut frames: Vec<Value> = Vec::new();
+        let mut saw_marker = false;
+        let mut saw_stop = false;
+        let mut window_started = false;
+        let mut ide_closed = false;
 
         loop {
-            if Instant::now() >= deadline {
-                return Err(AttemptError::after_send(format!(
-                    "No IPCSocket response from {path} (timeout)"
-                )));
+            // Once the answer has ended, the short wait after it may run past
+            // the deadline, and a part still half read is finished, briefly:
+            // cutting either short would close on the IDE mid-write.
+            let now = Instant::now();
+            let ended = saw_marker || window_started;
+            let half_read = buffer[cursor..].iter().any(|b| !b.is_ascii_whitespace());
+            if now >= collect_until && !(ended && half_read && now < collect_until + PARTIAL_PART) {
+                break;
             }
 
             match stream.read(&mut read_buf) {
                 Ok(0) => {
-                    return Err(AttemptError::after_send(format!(
-                        "IPCSocket connection closed by {path}"
-                    )));
+                    ide_closed = true;
+                    break;
                 }
                 Ok(n) => {
                     buffer.extend_from_slice(&read_buf[..n]);
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(ref e)
+                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+                {
                     continue;
                 }
                 Err(e) => {
@@ -313,26 +347,49 @@ impl Communicator {
             // than reallocating the buffer per frame.
             while let Some(rel_pos) = buffer[cursor..].iter().position(|&b| b == 0) {
                 let frame_end = cursor + rel_pos;
-                let frame_str = std::str::from_utf8(&buffer[cursor..frame_end])
-                    .map_err(|e| AttemptError::after_send(format!("Invalid UTF-8 in IPC frame: {e}")))?
-                    .trim();
+                let frame = std::str::from_utf8(&buffer[cursor..frame_end])
+                    .ok()
+                    .map(str::trim)
+                    .and_then(|s| (!s.is_empty()).then(|| serde_json::from_str::<Value>(s)));
                 cursor = frame_end + 1;
 
-                if frame_str.is_empty() {
+                // An unreadable frame is skipped, not fatal: returning here
+                // would close the socket on an IDE still writing.
+                let response = match frame {
+                    None => continue,
+                    Some(Ok(v)) => v,
+                    Some(Err(e)) => {
+                        if self.verbose {
+                            eprintln!("Skipped an unreadable IPC frame: {e}");
+                        }
+                        continue;
+                    }
+                };
+                if self.verbose {
+                    eprintln!("IDE response frame: {response}");
+                }
+                if response.get("tag").and_then(|t| t.as_str()) != Some(tag) {
+                    // Not our tag — discard orphaned frame and keep reading.
                     continue;
                 }
 
-                if self.verbose {
-                    eprintln!("IDE response frame: {frame_str}");
+                if reply::is_end_marker(&response, tag) {
+                    saw_marker = true;
+                    collect_until = Instant::now() + AFTER_END_MARKER;
+                    continue;
                 }
-
-                let response: Value = serde_json::from_str(frame_str)
-                    .map_err(|e| AttemptError::after_send(format!("Invalid JSON in IPC frame: {e}")))?;
-
-                if response.get("tag").and_then(|t| t.as_str()) == Some(tag) {
-                    return Ok(response);
+                saw_stop |= reply::stops_script(&response);
+                let kind = reply::kind(&response);
+                frames.push(response);
+                // Where no marker is coming, a short window after the first
+                // part that is not warnings alone ends the wait.
+                if !saw_marker
+                    && !window_started
+                    && (saw_stop || (!marker_expected && kind != reply::Kind::Warning))
+                {
+                    window_started = true;
+                    collect_until = Instant::now() + SPLIT_REPLY_WINDOW;
                 }
-                // Not our tag — discard orphaned frame and keep reading.
             }
 
             // Periodic compaction: reclaim consumed prefix once it dominates
@@ -343,6 +400,42 @@ impl Communicator {
                 cursor = 0;
             }
         }
+
+        // The marker arrived: the script ran to its last line. A script that
+        // printed nothing gets the reply the IDE sends for Print "".
+        if saw_marker {
+            return Ok(reply::merge(frames).unwrap_or_else(|| reply::empty(tag)));
+        }
+        // An error stopped the script, so nothing more is coming.
+        if saw_stop {
+            return Ok(reply::merge(frames).unwrap_or_else(|| reply::empty(tag)));
+        }
+        // No marker was appended; a window after a part that is not warnings
+        // alone is the only end there is.
+        if !marker_expected
+            && !ide_closed
+            && frames.iter().any(|f| reply::kind(f) != reply::Kind::Warning)
+            && let Some(merged) = reply::merge(frames)
+        {
+            return Ok(merged);
+        }
+        if ide_closed {
+            return Err(AttemptError::after_send(format!(
+                "The Xojo IDE at {path} closed the connection before it finished answering. \
+                 It may have quit or crashed, or run the script and then closed it, so the \
+                 request is not being sent again."
+            )));
+        }
+        // Accepted, not finished: the IDE is still running the script. Dropping
+        // the socket here still risks the SIGPIPE above if the IDE answers
+        // later; keeping it open across calls (upstream's "parking") is not
+        // done yet. A long build gets a long timeout to make this rare.
+        Err(AttemptError::after_send(format!(
+            "No complete answer from {path} within {} ms: the Xojo IDE accepted the request \
+             but has not finished it. It is most likely busy -- a build, or a dialog waiting \
+             for a click -- and will finish regardless, so the request is not being sent again.",
+            timeout.as_millis()
+        )))
     }
 
     fn next_tag(&self) -> String {
