@@ -35,9 +35,15 @@ pub fn build_string_variable_script(var_name: &str, value: &str) -> String {
 }
 
 /// Escape a string for use inside an IDE script string literal.
-/// Doubles all quote characters.
+/// Doubles all quote characters, and turns each line break into
+/// `" + EndOfLine + "`: a literal cannot span lines, so a raw newline would end
+/// it there and fail to compile. Every caller puts the result inside a literal
+/// that is part of an expression, where that concatenation is valid.
 pub fn escape_ide_string(s: &str) -> String {
     s.replace('"', "\"\"")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\" + EndOfLine + \"")
 }
 
 /// Indent every non-empty line of `text` by the given prefix.
@@ -62,6 +68,13 @@ mod tests {
     fn test_escape_ide_string() {
         assert_eq!(escape_ide_string(r#"hello "world""#), r#"hello ""world"""#);
         assert_eq!(escape_ide_string("no quotes"), "no quotes");
+    }
+
+    #[test]
+    fn a_line_break_never_reaches_the_literal() {
+        assert_eq!(escape_ide_string("a\nb"), "a\" + EndOfLine + \"b");
+        assert_eq!(escape_ide_string("a\r\nb\rc"), "a\" + EndOfLine + \"b\" + EndOfLine + \"c");
+        assert!(!escape_ide_string("x\r\ny\n").contains(['\n', '\r']));
     }
 
     #[test]

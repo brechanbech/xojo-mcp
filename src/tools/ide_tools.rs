@@ -867,6 +867,30 @@ impl Tool for GetItemDescription {
 // ---------------------------------------------------------------------------
 // constant_value
 // ---------------------------------------------------------------------------
+/// Set a constant and read it back. Assigning `ConstantValue` for a name that
+/// matches no constant is silently ignored by the IDE, and reading one gives
+/// "", so the read-back is the only evidence the set took. An empty value
+/// could not tell the two apart, so it is checked with a probe value first and
+/// then set. Both arguments must already be escaped for an IDE string.
+fn constant_set_script(name: &str, value: &str, value_is_empty: bool) -> String {
+    const PROBE: &str = "xmcp-constant-probe";
+    let (check, finish) = if value_is_empty {
+        (PROBE, format!("\n  ConstantValue(\"{name}\") = \"\""))
+    } else {
+        (value, String::new())
+    };
+    format!(
+        "ConstantValue(\"{name}\") = \"{check}\"\n\
+         If ConstantValue(\"{name}\") = \"{check}\" Then{finish}\n\
+         \x20 Print \"OK\"\n\
+         Else\n\
+         \x20 Print \"ERROR: Setting {name} did not take: it reads back as '\" + ConstantValue(\"{name}\") + \"'. \
+         The IDE ignores a value set on a name that matches no constant; check the name, and use the \
+         fully qualified form, e.g. App.kVersion.\"\n\
+         End If"
+    )
+}
+
 pub struct ConstantValue;
 
 impl Tool for ConstantValue {
@@ -876,7 +900,9 @@ impl Tool for ConstantValue {
     fn mutates(&self) -> bool { true }
     fn description(&self) -> &'static str {
         "Gets or sets the value of a project constant in the Xojo IDE. \
-         The constant must already exist in the project."
+         The constant must already exist in the project. A set is read back, so a name \
+         that matches no constant is reported rather than silently ignored; a get of such \
+         a name returns an empty value, the same as an empty constant."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -901,8 +927,7 @@ impl Tool for ConstantValue {
         let escaped_name = escape_ide_string(name);
 
         let script = if has_value {
-            let escaped_val = escape_ide_string(value);
-            format!("ConstantValue(\"{escaped_name}\") = \"{escaped_val}\"\nPrint \"OK\"")
+            constant_set_script(&escaped_name, &escape_ide_string(value), value.is_empty())
         } else {
             format!("Print ConstantValue(\"{escaped_name}\")")
         };
@@ -1057,8 +1082,27 @@ impl Tool for SetDeclaration {
         let escaped_type = escape_ide_string(arg_str(args, "data_type", ""));
         let escaped_impl = escape_ide_string(arg_str(args, "implements", ""));
 
+        // ChangeDeclaration handles methods and properties only. On anything
+        // else -- a constant, say -- it raises a runtime error the IDE reports
+        // with no message at all, so it is caught here and the item's kind
+        // named instead. IDE scripts have no RuntimeException class; a bare
+        // Catch is the only form that compiles.
         let core = format!(
-            "ChangeDeclaration(\"{escaped_name}\", \"{escaped_params}\", \"{escaped_type}\", {scope}, \"{escaped_impl}\")\nPrint \"OK: \" + Location"
+            "Dim __kind As String = TypeOfCurrentLocation\n\
+             Try\n\
+             \x20 ChangeDeclaration(\"{escaped_name}\", \"{escaped_params}\", \"{escaped_type}\", {scope}, \"{escaped_impl}\")\n\
+             \x20 Print \"OK: \" + Location\n\
+             Catch\n\
+             \x20 If __kind = \"Constant\" Then\n\
+             \x20   Print \"ERROR: \" + Location + \" is a constant, and the IDE cannot change a constant's declaration: \
+             ChangeDeclaration handles methods and properties only. To rename or retype it, edit Name and Type on its \
+             #tag Constant line on disk, then revert_project; set its value with constant_value.\"\n\
+             \x20 Else\n\
+             \x20   Print \"ERROR: The IDE refused the declaration of \" + Location + \" (\" + __kind + \") with a runtime \
+             error and no detail. ChangeDeclaration handles methods and properties only; for one of those, check the \
+             name, parameters and type.\"\n\
+             \x20 End If\n\
+             End Try"
         );
 
         let location = arg_str(args, "location", "");
