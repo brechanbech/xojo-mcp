@@ -388,6 +388,19 @@ On releases before 2026r3, window and control event handlers and layout are not
 reachable through any path — edit the `.xojo_window` file directly (see "How to
 edit code" above). Layout and control properties are never reachable.
 
+### Deleting items
+
+Xojo's IDE scripting has no delete command (its DoCommand reference lists
+`DeleteSelection` as not implemented), so no tool can delete an item and
+`run_ide_script` cannot either. To delete a **member** — method, property,
+constant, event handler — remove its `#tag` … `#tag End…` block from the item's
+`.xojo_code` or `.xojo_window` file, check it with `lint_project_file`, then
+reload as for any direct edit. A **whole project item** — class, module, window
+— is listed in the `.xojo_project` manifest, which is never hand-edited, so ask
+the user to delete it in the IDE.
+
+### Listing members
+
 `list_project_items` lists project items and folders, not members. On Xojo
 2026r3 an item's methods, properties, constants and events never appear under
 it (verified: a module holding a method lists as empty), and an empty listing

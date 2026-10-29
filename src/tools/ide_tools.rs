@@ -665,7 +665,10 @@ impl Tool for CreateProjectItem {
          'Window1.Untitled') and stays selected, so name and type it with set_declaration \
          straight afterwards, with no location. Use this, never a hand edit of the \
          .xojo_project file, to add items: the IDE assigns their IDs. The item stays in the \
-         IDE until save_project. Needs the Xojo IDE running with the project open."
+         IDE until save_project. There is no matching delete: Xojo's IDE scripting has no \
+         command for it. Delete a member by removing its #tag block from the item's file on \
+         disk; a whole item has to be deleted by the user in the IDE. Needs the Xojo IDE \
+         running with the project open."
     }
     fn parameters(&self) -> &[ToolParam] {
         static P: &[ToolParam] = &[ToolParam {
@@ -733,7 +736,8 @@ impl Tool for RunIdeScript {
          commands via DoShellCommand. Prefer a dedicated tool when one fits \
          (list_project_items, get_code, build_project, etc.); use this only \
          when nothing else does, and pause before running anything that \
-         quits the IDE, deletes items, or touches the shell. A runtime error comes back \
+         quits the IDE or touches the shell. It cannot delete project items: IDE scripting \
+         has no command for that (see create_project_item). A runtime error comes back \
          with no message or line number. Needs the Xojo IDE running."
     }
     fn parameters(&self) -> &[ToolParam] {
