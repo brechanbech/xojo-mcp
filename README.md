@@ -160,7 +160,7 @@ MCP log):
 
 1. Start the Xojo IDE and open your project
 2. Start a Claude Code session in the project directory
-3. Claude will automatically discover the 29 xmcp tools and the usage guide
+3. Claude will automatically discover the 31 xmcp tools and the usage guide
 
 ### 4. Download Xojo documentation (recommended)
 
@@ -428,6 +428,16 @@ Notable differences:
   rejects the mutating tools at the server. The original has no built-in
   enforcement; it can only be asked, via the prompt, not to write. See
   [Read-only mode](#read-only-mode).
+- **`scaffold_code_block` and `lint_project_file` differ from the original's in a few
+  places.** A guide on disk that predates their rules falls back to the compiled-in rules
+  instead of failing. The scaffold takes a full signature, so a return type yields a
+  `Function`, and it takes a body. It refuses a constant value whose escaping is
+  unconfirmed (a backslash or control character) instead of guessing. The lint blames the
+  block that lost its end tag instead of cascading. Its rules were re-checked against Xojo
+  2026r3: a module goes method, property, constant (the original has constants before
+  properties), and since Xojo loads misordered blocks and Flags/keyword mismatches and
+  resolves them on save, the lint reports those as warnings that say what Xojo will do,
+  not as errors.
 - **No Xojo license required** — builds with the standard Rust toolchain
 - **usage-guide.md has a compiled-in fallback** — the original fails silently
   if the file is missing next to the binary; the Rust version embeds a copy
@@ -438,7 +448,7 @@ Notable differences:
 
 ## Tools
 
-xmcp exposes 29 tools across five categories:
+xmcp exposes 31 tools across six categories:
 
 **IDE tools (22):** list_project_items, get_current_location, select_project_item,
 get_code, set_code, edit_code, get_selected_text, set_selected_text, build_project,
@@ -454,6 +464,11 @@ set_declaration, analyze_project, debug_control
 returns its compile errors with locations. It works through files in the project folder, not
 the IDE socket, so it can be pointed at a project with `project_dir` even when the socket is
 unavailable.
+
+**Project-file tools (2):** scaffold_code_block, lint_project_file — write a correctly
+formatted `#tag` block for a `.xojo_code` or `.xojo_window` file, and check such a file after
+editing it on disk. They read the file only, need no IDE, and take their rules from the JSON
+block in `usage-guide.md`, so a rule can be corrected without a rebuild.
 
 **Cost awareness (1):** estimate_request_cost
 

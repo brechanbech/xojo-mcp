@@ -36,7 +36,7 @@ disable it unless they bring it up; help them within the read tools available.
 
 ## What xmcp can do
 
-xmcp gives you direct control over the Xojo IDE via 29 tools:
+xmcp gives you direct control over the Xojo IDE via 31 tools:
 
 - **Navigate**: `list_project_items`, `get_current_location`, `select_project_item`
 - **Read/write code**: `get_code`, `set_code`, `edit_code`, `get_selected_text`, `set_selected_text`
@@ -46,6 +46,7 @@ xmcp gives you direct control over the Xojo IDE via 29 tools:
 - **Inspect and modify**: `get_item_description`, `constant_value`, `get_project_info`, `revert_project`, `save_project`
 - **App and build settings**: `property_value` — reads and writes *framework* properties such as `App.OptimizationLevel`, `App.SupportsDarkMode` or `Window1.Title`. This is the supported way to change settings that live in the `.xojo_project` file, which must never be hand-edited. It cannot reach properties you added yourself, and it cannot address controls on a window (there is no `Window1.PushButton1.Caption`) — for control properties, edit the `.xojo_window` file directly and `revert_project`
 - **Debug session control**: `debug_control` — step over/into/out, resume, pause during a `run_project` session
+- **Project files on disk**: `scaffold_code_block` writes a correctly formatted `#tag` block to insert into a `.xojo_code` or `.xojo_window` file, and `lint_project_file` checks such a file after you edit it. Neither needs the IDE — see "Xojo file structure rules"
 - **IDE scripting**: `run_ide_script` (escape hatch for anything not covered)
 - **Documentation**: `search_docs`, `lookup_class`, `list_doc_topics` *(require local docs — see below)*
 - **Debugging**: `get_debug_log`, `get_system_log`
@@ -177,6 +178,9 @@ first.
      the code inside existing blocks; do not hand-author new control definitions.
    - Preserve indentation and the existing line structure verbatim outside your
      change.
+   - To add a method, property, constant, event definition or event handler,
+     get its text from `scaffold_code_block` instead of writing `#tag` syntax
+     from memory — see "Xojo file structure rules" below.
 
    Window event handlers go in `#tag WindowCode`:
 
@@ -190,7 +194,14 @@ first.
    #tag EndWindowCode
    ```
 
-4. **Reload in the IDE**
+4. **Check the file**
+   Call `lint_project_file` with the file's absolute path. Fix every error it
+   reports before going on — an unbalanced `#tag` pair breaks the file. Fix the
+   warnings too unless you have a reason not to: Xojo loads a misordered block or a
+   Flags/keyword mismatch, but resolves the mismatch on its own terms, and an
+   unescaped constant value can be silently truncated.
+
+5. **Reload in the IDE**
    Ask the user for permission, then call `revert_project`. The user may see a confirmation prompt in the IDE — they need to accept it.
    **Skip this step in an Agentic Mode project** — Xojo reloads the file by itself (see "Agentic Mode projects" below).
 
@@ -200,6 +211,124 @@ Outside Agentic Mode, the IDE's in-memory copy is authoritative while the projec
 
 - **Edit without revert → stale code runs.** If you modify a `.xojo_window` file but skip `revert_project`, the IDE keeps using its in-memory version. `run_project` and `build_project` silently use the old code — your edits have no effect and nothing reports a problem.
 - **Save overwrites disk edits.** `save_project` (and Cmd+S in the IDE) writes the in-memory copy back to disk, clobbering any direct file edits. When a change doesn't seem to take effect, the instinct to "just save it" destroys the edit. Always `revert_project` (disk → IDE), never save, after editing files directly.
+
+---
+
+## Xojo file structure rules
+
+`scaffold_code_block` writes `#tag` blocks by these rules and `lint_project_file`
+checks a file against them. Both read the rules from the JSON block at the end of
+this section, so correcting a rule there takes effect on the next call, with no
+rebuild. Where a rule below is marked unconfirmed, the tools deliberately do not
+enforce it.
+
+### Block order
+
+Xojo writes blocks in a fixed order, but it is forgiving when reading them: tested
+on Xojo 2026r3, a module with its members out of order — even one placed after
+`#tag ViewBehavior` — loads with nothing lost and is re-sorted on the next save.
+So `lint_project_file` reports order as a warning, not an error. Keep to the order
+anyway; it keeps diffs small.
+
+Member blocks in a **class** file come in this order, and `#tag ViewBehavior` is
+always last:
+
+1. `#tag Event` — handlers for events the class inherits
+2. `#tag Method`
+3. `#tag Property` and `#tag ComputedProperty`, interleaved
+4. `#tag Constant`
+5. `#tag ViewBehavior`
+
+`#tag Note`, `#tag Hook`, `#tag Enum` and `#tag Structure` are not checked:
+notes appear in several places in IDE-written files, and where the IDE puts the
+others has not been confirmed.
+
+A **module** file has the same order without the event handlers: `#tag Method`,
+then `#tag Property`, then `#tag Constant`, then `#tag ViewBehavior`. Upstream
+XMCP documents constants before properties; that is not what Xojo writes — a
+2026r3 module whose constant was created first, then a property, then a method
+was saved as method, property, constant.
+
+A **window** file has `#tag DesktopWindow` (the layout), then `#tag WindowCode`
+(window events, methods, properties), then one `#tag Events ControlName` block per
+control that handles events, then `#tag ViewBehavior`.
+
+### Flags and visibility keywords
+
+Every `#tag Method` and `#tag Property` line carries `Flags = &hN`, and the
+declaration on the next line must start with the matching keyword:
+
+| Flag | Visibility | Declaration starts with |
+| --- | --- | --- |
+| `&h0` | public (global, in a module) | no keyword |
+| `&h1` | protected | `Protected` |
+| `&h21` | private | `Private` |
+
+A shared method keeps the same flag and adds `Shared` after the keyword:
+`Private Shared Function Create() As MyClass`.
+
+When the two disagree, Xojo still loads the file, and which one it believes
+depends on whether the keyword is there (tested on 2026r3): a declaration **with**
+a keyword wins, and the Flags are rewritten to match on the next save; a
+declaration **without** one takes the Flags' visibility, and the keyword is added
+on save. So a missing `Private` keeps a member private, but a stray `Private` on a
+member flagged `&h0` makes it private. `lint_project_file` warns about either case
+and says which visibility Xojo will use.
+
+### Event definitions and event handlers
+
+`#tag Hook` *defines* a new event that a class raises with `RaiseEvent`; it holds
+only the signature. `#tag Event` *handles* an event — one the class inherits, a
+window event inside `#tag WindowCode`, or a control's event inside
+`#tag Events ControlName`. Writing `#tag Event` to define a new event is wrong.
+
+### Constant Default values
+
+All of a constant lives on its `#tag Constant` line. The value sits between an
+escaped opening quote and a raw closing quote — `Default = \"100", Scope = Public` —
+and inside it:
+
+| Character | Written as |
+| --- | --- |
+| `"` | `\"` |
+| `'` | `\'` |
+| `=` | `\x3D` |
+| `,` | `\x2C` |
+| newline | `\n` |
+| non-ASCII, e.g. `°` | its UTF-8 bytes, `\xC2\xB0` — never `\uXXXX` |
+
+An unescaped character silently truncates the value; Xojo reports no error. A
+value that opens with a raw `"` instead of `\"` also compiles, but Xojo reads it
+back without its first character. How a backslash, a tab or another control
+character is escaped has not been confirmed, so `scaffold_code_block` refuses
+them — set such a value with `constant_value`, which lets Xojo do the escaping.
+
+### Format Rules (machine-readable — keep this block valid JSON)
+
+In `block_order`, a step written as a list holds kinds that may be mixed in any
+order. Kinds not listed are not checked.
+
+```json
+{
+  "flags": {
+    "&h0": {"keyword": "", "visibility": "public"},
+    "&h1": {"keyword": "Protected", "visibility": "protected"},
+    "&h21": {"keyword": "Private", "visibility": "private"}
+  },
+  "block_order": {
+    "xojo_code_class": ["Event", "Method", ["Property", "ComputedProperty"], "Constant", "ViewBehavior"],
+    "xojo_code_module": ["Method", ["Property", "ComputedProperty"], "Constant", "ViewBehavior"],
+    "xojo_window": ["DesktopWindow", "WindowCode", "Events", "ViewBehavior"]
+  },
+  "constant_escape": {
+    "'": "\\'",
+    "=": "\\x3D",
+    ",": "\\x2C",
+    "\n": "\\n"
+  },
+  "constant_types": ["String", "Integer", "Double", "Boolean", "Color"]
+}
+```
 
 ---
 

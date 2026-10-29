@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-const USAGE_GUIDE_FALLBACK: &str = include_str!("../../usage-guide.md");
+pub const USAGE_GUIDE_FALLBACK: &str = include_str!("../../usage-guide.md");
 
 /// Load the usage guide from disk (next to the executable), falling back
 /// to the compile-time embedded copy.

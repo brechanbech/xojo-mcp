@@ -260,6 +260,7 @@ impl Server {
         let ctx = ToolContext {
             ide: self.ide.as_ref(),
             docs_path: self.docs_path.as_deref(),
+            exe_dir: &self.exe_dir,
             verbose: self.verbose,
         };
 

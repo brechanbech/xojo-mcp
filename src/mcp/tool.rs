@@ -71,6 +71,9 @@ impl ToolResult {
 pub struct ToolContext<'a> {
     pub ide: Option<&'a Communicator>,
     pub docs_path: Option<&'a Path>,
+    /// The directory holding the xmcp binary, where an edited usage-guide.md
+    /// takes priority over the compiled-in copy.
+    pub exe_dir: &'a Path,
     #[allow(dead_code)]
     pub verbose: bool,
 }

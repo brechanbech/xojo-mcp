@@ -2,6 +2,7 @@ pub mod agentic_tools;
 pub mod cost_tool;
 pub mod debug_tools;
 pub mod doc_tools;
+pub mod format_tools;
 pub mod ide_tools;
 
 use std::collections::HashMap;
@@ -11,7 +12,7 @@ use serde_json::Value;
 
 use crate::mcp::tool::{Tool, ToolContext, ToolResult};
 
-/// Return all 29 tools.
+/// Return all 31 tools.
 pub fn all_tools() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ide_tools::ListProjectItems),
@@ -37,6 +38,8 @@ pub fn all_tools() -> Vec<Box<dyn Tool>> {
         Box::new(ide_tools::AnalyzeProject),
         Box::new(ide_tools::DebugControl),
         Box::new(agentic_tools::AgenticRun),
+        Box::new(format_tools::ScaffoldCodeBlock),
+        Box::new(format_tools::LintProjectFile),
         Box::new(doc_tools::SearchDocs::new()),
         Box::new(doc_tools::LookupClass),
         Box::new(doc_tools::ListDocTopics),
