@@ -508,3 +508,5 @@ never reused — so the order matters:
    ```
 
 [![MCP Badge](https://lobehub.com/badge/mcp/brechanbech-xojo-mcp?style=plastic)](https://lobehub.com/mcp/brechanbech-xojo-mcp)
+
+[![xojo-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/brechanbech/xojo-mcp/badges/score.svg)](https://glama.ai/mcp/servers/brechanbech/xojo-mcp)
