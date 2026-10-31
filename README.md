@@ -504,9 +504,8 @@ never reused — so the order matters:
    ```sh
    mcp-publisher validate      # checks server.json against the live registry
    mcp-publisher login github  # interactive, for the io.github.brechanbech/* namespace
-   mcp-publisher publish
+   mcp-publisher publish 
    ```
 
 [![MCP Badge](https://lobehub.com/badge/mcp/brechanbech-xojo-mcp?style=plastic)](https://lobehub.com/mcp/brechanbech-xojo-mcp)
-
 [![xojo-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/brechanbech/xojo-mcp/badges/score.svg)](https://glama.ai/mcp/servers/brechanbech/xojo-mcp)
