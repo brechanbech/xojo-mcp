@@ -506,3 +506,5 @@ never reused — so the order matters:
    mcp-publisher login github  # interactive, for the io.github.brechanbech/* namespace
    mcp-publisher publish
    ```
+
+[![MCP Badge](https://lobehub.com/badge/mcp/brechanbech-xojo-mcp?style=plastic)](https://lobehub.com/mcp/brechanbech-xojo-mcp)
