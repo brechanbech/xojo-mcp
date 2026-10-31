@@ -1,6 +1,8 @@
 # xojo-mcp
 
 [![CI](https://codeberg.org/brechanbech/xojo-mcp/actions/workflows/ci.yml/badge.svg)](https://codeberg.org/brechanbech/xojo-mcp/actions)
+[![MCP Badge](https://lobehub.com/badge/mcp/brechanbech-xojo-mcp?style=plastic)](https://lobehub.com/mcp/brechanbech-xojo-mcp)
+[![xojo-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/brechanbech/xojo-mcp/badges/score.svg)](https://glama.ai/mcp/servers/brechanbech/xojo-mcp)
 
 An MCP (Model Context Protocol) server that gives AI assistants direct control
 over the Xojo IDE. Communicates via stdin/stdout JSON-RPC and forwards IDE
@@ -508,6 +510,3 @@ never reused — so the order matters:
    mcp-publisher login github  # interactive, for the io.github.brechanbech/* namespace
    mcp-publisher publish 
    ```
-
-[![MCP Badge](https://lobehub.com/badge/mcp/brechanbech-xojo-mcp?style=plastic)](https://lobehub.com/mcp/brechanbech-xojo-mcp)
-[![xojo-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/brechanbech/xojo-mcp/badges/score.svg)](https://glama.ai/mcp/servers/brechanbech/xojo-mcp)
