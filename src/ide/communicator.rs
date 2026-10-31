@@ -363,7 +363,11 @@ impl Communicator {
                         Some((i, _)) => format!("{}...", &preview[..i]),
                         None => preview,
                     };
-                    format!("  {} (sent {}s ago): {preview}", p.tag, p.since.elapsed().as_secs())
+                    format!(
+                        "  {} (sent {}s ago): {preview}",
+                        p.tag,
+                        p.since.elapsed().as_secs()
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
@@ -371,7 +375,14 @@ impl Communicator {
     }
 
     /// Keep a delivered request's connection open until the IDE has answered.
-    fn park(&self, stream: UnixStream, tag: &str, script: &str, marker_expected: bool, unframed: &[u8]) {
+    fn park(
+        &self,
+        stream: UnixStream,
+        tag: &str,
+        script: &str,
+        marker_expected: bool,
+        unframed: &[u8],
+    ) {
         let now = Instant::now();
         self.pending().push(Pending {
             stream,
@@ -441,7 +452,8 @@ impl Communicator {
                     continue;
                 }
 
-                match self.try_send_receive(path, &payload, &tag, script, timeout, marker_expected) {
+                match self.try_send_receive(path, &payload, &tag, script, timeout, marker_expected)
+                {
                     Ok(response) => {
                         return Ok(response);
                     }
@@ -604,7 +616,9 @@ impl Communicator {
         // alone is the only end there is.
         if !marker_expected
             && !ide_closed
-            && frames.iter().any(|f| reply::kind(f) != reply::Kind::Warning)
+            && frames
+                .iter()
+                .any(|f| reply::kind(f) != reply::Kind::Warning)
             && let Some(merged) = reply::merge(frames)
         {
             return Ok(merged);
@@ -642,8 +656,8 @@ impl Communicator {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttemptError, Communicator, DEFAULT_SOCKET_NAME, Release, candidate_paths, resolve_socket_name,
-        summarize_errors,
+        AttemptError, Communicator, DEFAULT_SOCKET_NAME, Release, candidate_paths,
+        resolve_socket_name, summarize_errors,
     };
     use std::io::Write;
     use std::os::unix::net::UnixStream;
@@ -803,7 +817,10 @@ mod tests {
             .send_and_receive_with_timeout("Print 1", Duration::from_millis(100))
             .unwrap_err();
         assert!(err.contains("still busy"), "{err}");
-        assert!(err.contains("xmcp_7 (sent 0s ago): DoCommand \"BuildApp\""), "{err}");
+        assert!(
+            err.contains("xmcp_7 (sent 0s ago): DoCommand \"BuildApp\""),
+            "{err}"
+        );
         assert!(err.contains("Do not quit"), "{err}");
         assert_eq!(c.pending().len(), 1, "refusing must not release it");
     }
@@ -819,7 +836,10 @@ mod tests {
     fn the_marker_releases_a_parked_request_after_a_quiet_spell() {
         let (c, mut ide) = parked("Print 1");
         frame(&mut ide, r#"{"tag":"other","response":"xmcp-end:xmcp_7"}"#);
-        assert!(poll_first(&c).is_none(), "another tag says nothing about ours");
+        assert!(
+            poll_first(&c).is_none(),
+            "another tag says nothing about ours"
+        );
         // The marker arrives in two pieces; only the whole part counts.
         ide.write_all(br#"{"tag":"xmcp_7","respo"#).unwrap();
         assert!(poll_first(&c).is_none());
@@ -827,7 +847,10 @@ mod tests {
         ide.write_all(&[0]).unwrap();
         let start = Instant::now();
         assert!(matches!(poll_first(&c), Some(Release::Answered)));
-        assert!(start.elapsed() >= Duration::from_millis(200), "waited for a trailing warning");
+        assert!(
+            start.elapsed() >= Duration::from_millis(200),
+            "waited for a trailing warning"
+        );
         assert!(c.drain_pending().is_none(), "released");
         assert!(c.pending().is_empty());
     }
@@ -835,7 +858,10 @@ mod tests {
     #[test]
     fn an_error_that_stops_the_script_ends_a_parked_answer() {
         let (c, mut ide) = parked("Print x");
-        frame(&mut ide, r#"{"tag":"xmcp_7","response":{"scriptError":[{"type":"scriptRuntimeError"}]}}"#);
+        frame(
+            &mut ide,
+            r#"{"tag":"xmcp_7","response":{"scriptError":[{"type":"scriptRuntimeError"}]}}"#,
+        );
         assert!(matches!(poll_first(&c), Some(Release::Answered)));
     }
 

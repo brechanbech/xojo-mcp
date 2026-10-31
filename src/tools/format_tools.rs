@@ -84,7 +84,10 @@ impl FormatRules {
             && let Some(block) = rules_block(&guide)
         {
             return Self::parse(block).map_err(|e| {
-                format!("The Format Rules block in {} is invalid: {e}", path.display())
+                format!(
+                    "The Format Rules block in {} is invalid: {e}",
+                    path.display()
+                )
             });
         }
         let block = rules_block(USAGE_GUIDE_FALLBACK)
@@ -99,7 +102,11 @@ impl FormatRules {
             let mut chars = key.chars();
             match (chars.next(), chars.next()) {
                 (Some(c), None) => constant_escape.push((c, replacement)),
-                _ => return Err(format!("constant_escape key {key:?} is not a single character")),
+                _ => {
+                    return Err(format!(
+                        "constant_escape key {key:?} is not a single character"
+                    ));
+                }
             }
         }
         Ok(Self {
@@ -139,7 +146,11 @@ impl FormatRules {
                     "The default value contains {}, and how a #tag Constant line escapes that \
                      has not been confirmed. Create the constant in the IDE and set its value \
                      with constant_value, so Xojo does the escaping.",
-                    if ch == '\\' { "a backslash".to_string() } else { format!("the control character U+{:04X}", ch as u32) }
+                    if ch == '\\' {
+                        "a backslash".to_string()
+                    } else {
+                        format!("the control character U+{:04X}", ch as u32)
+                    }
                 ));
             } else if ch.is_ascii() {
                 out.push(ch);
@@ -178,8 +189,13 @@ fn rules_block(guide: &str) -> Option<&str> {
 pub struct ScaffoldCodeBlock;
 
 const BLOCK_KINDS: &[&str] = &[
-    "method", "shared_method", "property", "constant",
-    "event_definition", "control_event", "window_event",
+    "method",
+    "shared_method",
+    "property",
+    "constant",
+    "event_definition",
+    "control_event",
+    "window_event",
 ];
 
 /// Whether an optional argument means anything for a block kind. Passing one
@@ -191,7 +207,10 @@ fn kind_takes(kind: &str, arg: &str) -> bool {
             kind,
             "method" | "shared_method" | "event_definition" | "control_event" | "window_event"
         ),
-        "body" => matches!(kind, "method" | "shared_method" | "control_event" | "window_event"),
+        "body" => matches!(
+            kind,
+            "method" | "shared_method" | "control_event" | "window_event"
+        ),
         "event" => kind == "control_event",
         "type" => matches!(kind, "property" | "constant"),
         "default_value" => kind == "constant",
@@ -211,8 +230,12 @@ struct ScaffoldRequest<'a> {
 }
 
 impl Tool for ScaffoldCodeBlock {
-    fn name(&self) -> &'static str { "scaffold_code_block" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Scaffold Code Block") }
+    fn name(&self) -> &'static str {
+        "scaffold_code_block"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Scaffold Code Block")
+    }
     fn description(&self) -> &'static str {
         "Generates a correctly formatted #tag block for a .xojo_code or .xojo_window file: \
          a method, shared method, property, constant, event definition (#tag Hook), control \
@@ -303,7 +326,14 @@ impl Tool for ScaffoldCodeBlock {
                 BLOCK_KINDS.join(", ")
             ));
         }
-        for arg in ["visibility", "signature", "event", "type", "default_value", "body"] {
+        for arg in [
+            "visibility",
+            "signature",
+            "event",
+            "type",
+            "default_value",
+            "body",
+        ] {
             if args.get(arg).is_some_and(|v| !v.is_null()) && !kind_takes(kind, arg) {
                 return ToolResult::failure(format!(
                     "`{arg}` does not apply to block_kind `{kind}`."
@@ -333,19 +363,31 @@ impl Tool for ScaffoldCodeBlock {
 
 fn scaffold(req: &ScaffoldRequest, rules: &FormatRules) -> Result<String, String> {
     check_identifier("name", req.name)?;
-    let visibility = if req.visibility.trim().is_empty() { "public" } else { req.visibility };
+    let visibility = if req.visibility.trim().is_empty() {
+        "public"
+    } else {
+        req.visibility
+    };
     let (flag, keyword) = rules.flag_for(visibility).ok_or_else(|| {
         format!(
             "Unknown visibility `{visibility}`. Valid values: {}.",
             rules.visibilities().join(", ")
         )
     })?;
-    let keyword = if keyword.is_empty() { String::new() } else { format!("{keyword} ") };
+    let keyword = if keyword.is_empty() {
+        String::new()
+    } else {
+        format!("{keyword} ")
+    };
     let name = req.name;
 
     let lines: Vec<String> = match req.kind {
         "method" | "shared_method" => {
-            let shared = if req.kind == "shared_method" { "Shared " } else { "" };
+            let shared = if req.kind == "shared_method" {
+                "Shared "
+            } else {
+                ""
+            };
             let (head, end) = routine(name, req.signature)?;
             let mut v = vec![
                 format!("\t#tag Method, Flags = {flag}"),
@@ -368,7 +410,11 @@ fn scaffold(req: &ScaffoldRequest, rules: &FormatRules) -> Result<String, String
             ]
         }
         "constant" => {
-            let wanted = if req.type_name.trim().is_empty() { "String" } else { req.type_name.trim() };
+            let wanted = if req.type_name.trim().is_empty() {
+                "String"
+            } else {
+                req.type_name.trim()
+            };
             let type_name = rules
                 .constant_types
                 .iter()
@@ -392,7 +438,9 @@ fn scaffold(req: &ScaffoldRequest, rules: &FormatRules) -> Result<String, String
         "event_definition" => {
             // An event definition has no scope of its own; the IDE writes the
             // public flag and no keyword.
-            let (public_flag, _) = rules.flag_for("public").ok_or("The Format Rules have no public flag.")?;
+            let (public_flag, _) = rules
+                .flag_for("public")
+                .ok_or("The Format Rules have no public flag.")?;
             let (params, returns) = split_signature(req.signature)?;
             let returns = returns.map(|r| format!(" As {r}")).unwrap_or_default();
             vec![
@@ -478,7 +526,9 @@ fn split_signature(signature: &str) -> Result<(String, Option<String>), String> 
         .map(|_| rest[3..].trim())
         .filter(|r| !r.is_empty())
         .ok_or_else(|| {
-            format!("After the parameter list, the signature `{s}` can only have `As <return type>`.")
+            format!(
+                "After the parameter list, the signature `{s}` can only have `As <return type>`."
+            )
         })?;
     Ok((params, Some(returns.to_string())))
 }
@@ -507,7 +557,10 @@ fn check_identifier(arg: &str, value: &str) -> Result<(), String> {
 fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars.flat_map(|c| c.to_lowercase())).collect(),
+        Some(first) => first
+            .to_uppercase()
+            .chain(chars.flat_map(|c| c.to_lowercase()))
+            .collect(),
         None => String::new(),
     }
 }
@@ -518,8 +571,12 @@ fn capitalize(s: &str) -> String {
 pub struct LintProjectFile;
 
 impl Tool for LintProjectFile {
-    fn name(&self) -> &'static str { "lint_project_file" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Lint Project File") }
+    fn name(&self) -> &'static str {
+        "lint_project_file"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Lint Project File")
+    }
     fn description(&self) -> &'static str {
         "Checks a .xojo_code or .xojo_window file on disk for mistakes the IDE reports \
          badly or not at all. Errors are unbalanced #tag/#tag End pairs, which break the \
@@ -557,7 +614,7 @@ impl Tool for LintProjectFile {
             _ => {
                 return ToolResult::failure(
                     "lint_project_file checks .xojo_code and .xojo_window files only.",
-                )
+                );
             }
         };
         let text = match std::fs::read_to_string(path) {
@@ -589,10 +646,17 @@ fn report(path: &str, diagnostics: &[Diagnostic]) -> String {
     if diagnostics.is_empty() {
         return format!("No issues found in {path}.");
     }
-    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
     let warnings = diagnostics.len() - errors;
     let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
-    let mut out = format!("{}, {} in {path}:", plural(errors, "error"), plural(warnings, "warning"));
+    let mut out = format!(
+        "{}, {} in {path}:",
+        plural(errors, "error"),
+        plural(warnings, "warning")
+    );
     for d in diagnostics {
         let label = match d.severity {
             Severity::Error => "error",
@@ -673,7 +737,11 @@ fn check_structure(
         (false, true) => &rules.block_order.xojo_code_module,
         (false, false) => &rules.block_order.xojo_code_class,
     };
-    let order_text = order.iter().map(Rank::label).collect::<Vec<_>>().join(" → ");
+    let order_text = order
+        .iter()
+        .map(Rank::label)
+        .collect::<Vec<_>>()
+        .join(" → ");
     let member_depth = if is_window { 0 } else { 1 };
 
     let mut stack: Vec<(&str, usize)> = Vec::new();
@@ -685,12 +753,17 @@ fn check_structure(
         if in_note[i] {
             continue;
         }
-        let Some((kind, closing)) = tag_of(line.trim()) else { continue };
+        let Some((kind, closing)) = tag_of(line.trim()) else {
+            continue;
+        };
         let n = i + 1;
 
         if closing {
             match stack.pop() {
-                None => out.push(error(n, format!("`#tag End{kind}` has no opening `#tag {kind}`."))),
+                None => out.push(error(
+                    n,
+                    format!("`#tag End{kind}` has no opening `#tag {kind}`."),
+                )),
                 Some((open, at)) if open != kind => out.push(error(
                     n,
                     format!("`#tag End{kind}` closes `#tag {open}`, opened at line {at}."),
@@ -726,10 +799,12 @@ fn check_structure(
                 view_behavior_at = Some(n);
             } else if let Some(rank) = order.iter().position(|r| r.contains(kind)) {
                 match highest_rank {
-                    Some(h) if rank < h => match misplaced.iter_mut().find(|(k, _, _)| *k == kind) {
-                        Some((_, _, count)) => *count += 1,
-                        None => misplaced.push((kind, n, 1)),
-                    },
+                    Some(h) if rank < h => {
+                        match misplaced.iter_mut().find(|(k, _, _)| *k == kind) {
+                            Some((_, _, count)) => *count += 1,
+                            None => misplaced.push((kind, n, 1)),
+                        }
+                    }
                     _ => highest_rank = Some(rank),
                 }
             }
@@ -755,7 +830,10 @@ fn check_structure(
     }
 
     for (kind, at) in stack {
-        out.push(error(at, format!("`#tag {kind}` is never closed with `#tag End{kind}`.")));
+        out.push(error(
+            at,
+            format!("`#tag {kind}` is never closed with `#tag End{kind}`."),
+        ));
     }
 }
 
@@ -773,10 +851,20 @@ fn check_flags(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &mut 
         if !(trimmed.starts_with("#tag Method,") || trimmed.starts_with("#tag Property,")) {
             continue;
         }
-        let Some(at) = trimmed.find("Flags = ") else { continue };
-        let flag = trimmed[at + "Flags = ".len()..].split(',').next().unwrap_or("").trim();
-        let Some(rule) = rules.flags.get(flag) else { continue };
-        let Some(decl) = lines.get(i + 1).map(|l| l.trim()) else { continue };
+        let Some(at) = trimmed.find("Flags = ") else {
+            continue;
+        };
+        let flag = trimmed[at + "Flags = ".len()..]
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim();
+        let Some(rule) = rules.flags.get(flag) else {
+            continue;
+        };
+        let Some(decl) = lines.get(i + 1).map(|l| l.trim()) else {
+            continue;
+        };
 
         let declared = rules
             .flags
@@ -806,7 +894,12 @@ fn check_flags(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &mut 
 }
 
 /// Characters left unescaped in a constant's `Default = \"…"` value.
-fn check_constants(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &mut Vec<Diagnostic>) {
+fn check_constants(
+    lines: &[&str],
+    in_note: &[bool],
+    rules: &FormatRules,
+    out: &mut Vec<Diagnostic>,
+) {
     const OPEN: &str = "Default = \\\"";
     // The value runs to the last `", Scope = ` on the line, not the first
     // unescaped quote: a stray quote in the middle is exactly what this looks
@@ -818,7 +911,9 @@ fn check_constants(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &
         if in_note[i] {
             continue;
         }
-        let Some(rest) = line.trim().strip_prefix("#tag Constant,") else { continue };
+        let Some(rest) = line.trim().strip_prefix("#tag Constant,") else {
+            continue;
+        };
         let n = i + 1;
         let Some(at) = rest.find(OPEN) else {
             if rest.contains("Default = \"") {
@@ -833,7 +928,9 @@ fn check_constants(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &
             continue;
         };
         let value_and_rest = &rest[at + OPEN.len()..];
-        let Some(end) = value_and_rest.rfind(CLOSE) else { continue };
+        let Some(end) = value_and_rest.rfind(CLOSE) else {
+            continue;
+        };
 
         let mut seen: Vec<char> = Vec::new();
         let mut chars = value_and_rest[..end].chars();
@@ -861,7 +958,10 @@ fn check_constants(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &
                 seen.push(ch);
                 out.push(warning(
                     n,
-                    format!("unescaped `{ch}` in the Default value; write it as {}.", quote_code(&expected)),
+                    format!(
+                        "unescaped `{ch}` in the Default value; write it as {}.",
+                        quote_code(&expected)
+                    ),
                 ));
             }
         }
@@ -869,15 +969,27 @@ fn check_constants(lines: &[&str], in_note: &[bool], rules: &FormatRules, out: &
 }
 
 fn quote_code(s: &str) -> String {
-    if s.starts_with('\\') { format!("`{s}`") } else { s.to_string() }
+    if s.starts_with('\\') {
+        format!("`{s}`")
+    } else {
+        s.to_string()
+    }
 }
 
 fn error(line: usize, message: String) -> Diagnostic {
-    Diagnostic { line, severity: Severity::Error, message }
+    Diagnostic {
+        line,
+        severity: Severity::Error,
+        message,
+    }
 }
 
 fn warning(line: usize, message: String) -> Diagnostic {
-    Diagnostic { line, severity: Severity::Warning, message }
+    Diagnostic {
+        line,
+        severity: Severity::Warning,
+        message,
+    }
 }
 
 #[cfg(test)]
@@ -923,8 +1035,14 @@ mod tests {
         std::fs::write(dir.join("usage-guide.md"), "# An older guide\n").unwrap();
         assert!(FormatRules::load(&dir).is_ok());
 
-        std::fs::write(dir.join("usage-guide.md"), "### Format Rules\n```json\n{\"flags\": 1}\n```\n").unwrap();
-        let err = FormatRules::load(&dir).err().expect("an edited, broken block is reported");
+        std::fs::write(
+            dir.join("usage-guide.md"),
+            "### Format Rules\n```json\n{\"flags\": 1}\n```\n",
+        )
+        .unwrap();
+        let err = FormatRules::load(&dir)
+            .err()
+            .expect("an edited, broken block is reported");
         assert!(err.contains("is invalid"), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -932,9 +1050,15 @@ mod tests {
     #[test]
     fn default_values_are_escaped_like_the_ide() {
         let r = rules();
-        assert_eq!(r.escape_default("a,b=c'd\"e").unwrap(), "a\\x2Cb\\x3Dc\\'d\\\"e");
+        assert_eq!(
+            r.escape_default("a,b=c'd\"e").unwrap(),
+            "a\\x2Cb\\x3Dc\\'d\\\"e"
+        );
         assert_eq!(r.escape_default("20°").unwrap(), "20\\xC2\\xB0");
-        assert_eq!(r.escape_default("one\r\ntwo\rthree").unwrap(), "one\\ntwo\\nthree");
+        assert_eq!(
+            r.escape_default("one\r\ntwo\rthree").unwrap(),
+            "one\\ntwo\\nthree"
+        );
         assert!(r.escape_default("C:\\temp").is_err());
         assert!(r.escape_default("tab\there").is_err());
     }
@@ -944,7 +1068,10 @@ mod tests {
         assert_eq!(split_signature("").unwrap(), ("()".into(), None));
         assert_eq!(
             split_signature("(a As Integer, b() As String) As String()").unwrap(),
-            ("(a As Integer, b() As String)".into(), Some("String()".into()))
+            (
+                "(a As Integer, b() As String)".into(),
+                Some("String()".into())
+            )
         );
         assert!(split_signature("x As Integer").is_err());
         assert!(split_signature("(x As Integer").is_err());
@@ -994,7 +1121,11 @@ mod tests {
              Default = \\\"Hello\\x2C \\\"world\\\"\", Scope = Private\n\t#tag EndConstant"
         );
         q.type_name = "Decimal";
-        assert!(scaffold(&q, &rules()).unwrap_err().contains("Unknown constant type"));
+        assert!(
+            scaffold(&q, &rules())
+                .unwrap_err()
+                .contains("Unknown constant type")
+        );
     }
 
     #[test]
@@ -1026,7 +1157,10 @@ mod tests {
             "#tag Events Button1\n\t#tag Event\n\t\tSub Pressed()\n\t\t  UpdateLabel(TextField1.Text)\n\
              \t\tEnd Sub\n\t#tag EndEvent\n#tag EndEvents"
         );
-        assert!(scaffold(&req("control_event", "Button1"), &r).is_err(), "event is required");
+        assert!(
+            scaffold(&req("control_event", "Button1"), &r).is_err(),
+            "event is required"
+        );
 
         let mut key = req("window_event", "KeyDown");
         key.signature = "(key As String) As Boolean";
@@ -1100,7 +1234,10 @@ End Class\n\
     #[test]
     fn an_ide_shaped_class_is_clean() {
         assert_eq!(lint_messages(CLASS, false), Vec::<String>::new());
-        assert_eq!(lint_messages(&CLASS.replace('\n', "\r\n"), false), Vec::<String>::new());
+        assert_eq!(
+            lint_messages(&CLASS.replace('\n', "\r\n"), false),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -1117,11 +1254,20 @@ End Class\n\
         assert_eq!(msgs.len(), 1, "{msgs:?}");
         assert!(msgs[0].contains("after `#tag ViewBehavior`"), "{msgs:?}");
 
-        let swapped = CLASS.replacen("\t#tag Property, Flags = &h21", "\t#tag Method, Flags = &h21", 1)
+        let swapped = CLASS
+            .replacen(
+                "\t#tag Property, Flags = &h21",
+                "\t#tag Method, Flags = &h21",
+                1,
+            )
             .replacen("\t#tag EndProperty", "\t#tag EndMethod", 1)
             .replace("Private mCount As Integer", "Private Sub Later()");
         let msgs = lint_messages(&swapped, false);
-        assert!(msgs.iter().any(|m| m.contains("`#tag Method` is out of order")), "{msgs:?}");
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("`#tag Method` is out of order")),
+            "{msgs:?}"
+        );
     }
 
     #[test]
@@ -1145,7 +1291,11 @@ End Class\n\
         );
         let msgs = lint_messages(&constant_first, false);
         assert_eq!(msgs.len(), 2, "{msgs:?}");
-        assert!(msgs.iter().all(|m| m.starts_with("Warning") && m.contains("out of order")), "{msgs:?}");
+        assert!(
+            msgs.iter()
+                .all(|m| m.starts_with("Warning") && m.contains("out of order")),
+            "{msgs:?}"
+        );
 
         let two_properties = constant_first.replace(
             "\t#tag ViewBehavior",
@@ -1153,7 +1303,11 @@ End Class\n\
         );
         let msgs = lint_messages(&two_properties, false);
         assert_eq!(msgs.len(), 2, "one warning per kind: {msgs:?}");
-        assert!(msgs.iter().any(|m| m.contains("`#tag Property` (and 1 more)")), "{msgs:?}");
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("`#tag Property` (and 1 more)")),
+            "{msgs:?}"
+        );
     }
 
     #[test]
@@ -1162,7 +1316,8 @@ End Class\n\
         let msgs = lint_messages(&missing, false);
         assert_eq!(msgs.len(), 1, "{msgs:?}");
         assert!(
-            msgs[0].starts_with("Warning 29:") && msgs[0].contains("no `Private`")
+            msgs[0].starts_with("Warning 29:")
+                && msgs[0].contains("no `Private`")
                 && msgs[0].contains("follows the Flags, making this private"),
             "{msgs:?}"
         );
@@ -1170,37 +1325,56 @@ End Class\n\
         let extra = CLASS.replace("\t\tSub Increment()", "\t\tProtected Sub Increment()");
         let msgs = lint_messages(&extra, false);
         assert!(
-            msgs[0].contains("says `Protected`") && msgs[0].contains("follows the keyword, making this protected"),
+            msgs[0].contains("says `Protected`")
+                && msgs[0].contains("follows the keyword, making this protected"),
             "{msgs:?}"
         );
 
-        let other = CLASS.replace("\t\tPrivate mCount As Integer", "\t\tProtected mCount As Integer");
+        let other = CLASS.replace(
+            "\t\tPrivate mCount As Integer",
+            "\t\tProtected mCount As Integer",
+        );
         let msgs = lint_messages(&other, false);
-        assert!(msgs[0].contains("says `Protected` but Flags = &h21 is private"), "{msgs:?}");
+        assert!(
+            msgs[0].contains("says `Protected` but Flags = &h21 is private"),
+            "{msgs:?}"
+        );
     }
 
     #[test]
     fn flags_unbalanced_tags() {
         let unclosed = CLASS.replace("\t#tag EndProperty\n", "");
         let msgs = lint_messages(&unclosed, false);
-        assert!(msgs.iter().any(|m| m.contains("closes `#tag Property`")), "{msgs:?}");
+        assert!(
+            msgs.iter().any(|m| m.contains("closes `#tag Property`")),
+            "{msgs:?}"
+        );
 
         // Two methods, the first missing its end tag.
         let lost_end = CLASS
             .replacen("\t#tag EndMethod\n", "", 1)
-            .replacen("\t#tag Property, Flags = &h21", "\t#tag Method, Flags = &h21", 1)
+            .replacen(
+                "\t#tag Property, Flags = &h21",
+                "\t#tag Method, Flags = &h21",
+                1,
+            )
             .replacen("\t#tag EndProperty", "\t#tag EndMethod", 1)
             .replace("Private mCount As Integer", "Private Sub Later()");
         let msgs = lint_messages(&lost_end, false);
         assert_eq!(
             msgs,
-            ["Error 8: `#tag Method` has no `#tag EndMethod` before the next `#tag Method` at line 27."],
+            [
+                "Error 8: `#tag Method` has no `#tag EndMethod` before the next `#tag Method` at line 27."
+            ],
             "the block that lost its end is blamed, with no cascade"
         );
 
         let stray = format!("{CLASS}#tag EndClass\n");
         let msgs = lint_messages(&stray, false);
-        assert!(msgs.iter().any(|m| m.contains("has no opening")), "{msgs:?}");
+        assert!(
+            msgs.iter().any(|m| m.contains("has no opening")),
+            "{msgs:?}"
+        );
     }
 
     #[test]
@@ -1212,11 +1386,22 @@ End Class\n\
             )
         };
         let msgs = lint_messages(&line("Default = \\\"a,b,c='d'\""), false);
-        assert_eq!(msgs.len(), 3, "one warning per character, not per occurrence: {msgs:?}");
-        assert!(msgs.iter().any(|m| m.contains("`,`") && m.contains("`\\x2C`")), "{msgs:?}");
+        assert_eq!(
+            msgs.len(),
+            3,
+            "one warning per character, not per occurrence: {msgs:?}"
+        );
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("`,`") && m.contains("`\\x2C`")),
+            "{msgs:?}"
+        );
 
         let msgs = lint_messages(&line("Default = \\\"say \"hi\\\" 20°\""), false);
-        assert!(msgs.iter().any(|m| m.contains("unescaped `\"`")), "{msgs:?}");
+        assert!(
+            msgs.iter().any(|m| m.contains("unescaped `\"`")),
+            "{msgs:?}"
+        );
         assert!(msgs.iter().any(|m| m.contains("`°`")), "{msgs:?}");
 
         let msgs = lint_messages(&line("Default = \"MyApp\""), false);
@@ -1233,9 +1418,17 @@ End Class\n\
 #tag Events Button1\n\t#tag Event\n\t\tSub Pressed()\n\t\tEnd Sub\n\t#tag EndEvent\n#tag EndEvents\n\
 #tag ViewBehavior\n#tag EndViewBehavior\n";
         assert_eq!(lint_messages(window, true), Vec::<String>::new());
-        let events_first = window.replacen("#tag WindowCode", "#tag Events Early\n#tag EndEvents\n#tag WindowCode", 1);
+        let events_first = window.replacen(
+            "#tag WindowCode",
+            "#tag Events Early\n#tag EndEvents\n#tag WindowCode",
+            1,
+        );
         let msgs = lint_messages(&events_first, true);
-        assert!(msgs.iter().any(|m| m.contains("`#tag WindowCode` is out of order")), "{msgs:?}");
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("`#tag WindowCode` is out of order")),
+            "{msgs:?}"
+        );
     }
 
     #[test]
@@ -1263,11 +1456,21 @@ End Class\n\
 
     #[test]
     fn the_report_counts_and_lists() {
-        assert_eq!(report("/p/A.xojo_code", &[]), "No issues found in /p/A.xojo_code.");
+        assert_eq!(
+            report("/p/A.xojo_code", &[]),
+            "No issues found in /p/A.xojo_code."
+        );
         let text = report(
             "/p/A.xojo_code",
-            &[error(3, "bad".into()), warning(9, "odd".into()), warning(10, "odd".into())],
+            &[
+                error(3, "bad".into()),
+                warning(9, "odd".into()),
+                warning(10, "odd".into()),
+            ],
         );
-        assert_eq!(text, "1 error, 2 warnings in /p/A.xojo_code:\nerror: line 3: bad\nwarning: line 9: odd\nwarning: line 10: odd");
+        assert_eq!(
+            text,
+            "1 error, 2 warnings in /p/A.xojo_code:\nerror: line 3: bad\nwarning: line 9: odd\nwarning: line 10: odd"
+        );
     }
 }

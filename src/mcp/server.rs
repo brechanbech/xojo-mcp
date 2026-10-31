@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use crate::ide::communicator::Communicator;
 use crate::mcp::protocol::*;
-use crate::mcp::tool::*;
 use crate::mcp::resources;
+use crate::mcp::tool::*;
 
 pub struct Server {
     tools: Vec<Box<dyn Tool>>,
@@ -68,8 +68,11 @@ impl Server {
             let request: JsonRpcRequest = match serde_json::from_str(&line) {
                 Ok(r) => r,
                 Err(e) => {
-                    let resp =
-                        JsonRpcResponse::error(Value::Null, ErrorCode::ParseError, format!("JSON parsing error: {e}"));
+                    let resp = JsonRpcResponse::error(
+                        Value::Null,
+                        ErrorCode::ParseError,
+                        format!("JSON parsing error: {e}"),
+                    );
                     Self::write_response(&mut writer, &resp);
                     continue;
                 }
@@ -377,7 +380,10 @@ mod tests {
     #[test]
     fn read_only_mode_hides_exactly_the_mutating_tools() {
         let names = server(true).tools_list_names();
-        assert_eq!(names.len(), crate::tools::all_tools().len() - MUTATING.len());
+        assert_eq!(
+            names.len(),
+            crate::tools::all_tools().len() - MUTATING.len()
+        );
         for m in MUTATING {
             assert!(!names.contains(&m.to_string()), "{m} must be hidden");
         }

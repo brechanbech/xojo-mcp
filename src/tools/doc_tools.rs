@@ -33,8 +33,12 @@ impl SearchDocs {
 }
 
 impl Tool for SearchDocs {
-    fn name(&self) -> &'static str { "search_docs" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Search Documentation") }
+    fn name(&self) -> &'static str {
+        "search_docs"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Search Documentation")
+    }
     fn description(&self) -> &'static str {
         "Searches the full text of the local Xojo documentation — guides, tutorials and API \
          pages — for a case-insensitive literal substring. Returns up to max_results excerpts \
@@ -46,26 +50,30 @@ impl Tool for SearchDocs {
          documentation (fails if none was found) and needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
-        static P: &[ToolParam] = &[ToolParam {
-            name: "query",
-            param_type: ParamType::String,
-            description: "Text to find, matched case-insensitively as a literal substring \
+        static P: &[ToolParam] = &[
+            ToolParam {
+                name: "query",
+                param_type: ParamType::String,
+                description: "Text to find, matched case-insensitively as a literal substring \
                           (e.g. 'JSONItem', 'prepared statement')",
-            required: true,
-            default: None,
-        }, ToolParam {
-            name: "max_results",
-            param_type: ParamType::Integer,
-            description: "Most excerpts to return. Default 5.",
-            required: false,
-            default: None,
-        }, ToolParam {
-            name: "context_lines",
-            param_type: ParamType::Integer,
-            description: "Lines to include before and after each match. Default 10.",
-            required: false,
-            default: None,
-        }];
+                required: true,
+                default: None,
+            },
+            ToolParam {
+                name: "max_results",
+                param_type: ParamType::Integer,
+                description: "Most excerpts to return. Default 5.",
+                required: false,
+                default: None,
+            },
+            ToolParam {
+                name: "context_lines",
+                param_type: ParamType::Integer,
+                description: "Lines to include before and after each match. Default 10.",
+                required: false,
+                default: None,
+            },
+        ];
         P
     }
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -141,8 +149,12 @@ impl Tool for SearchDocs {
 pub struct LookupClass;
 
 impl Tool for LookupClass {
-    fn name(&self) -> &'static str { "lookup_class" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Look Up Class") }
+    fn name(&self) -> &'static str {
+        "lookup_class"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Look Up Class")
+    }
     fn description(&self) -> &'static str {
         "Returns the reference page for one Xojo class, control, data type or other API, by \
          name (case-insensitive). If no page has that exact name it tries the Desktop and Web \
@@ -304,7 +316,9 @@ fn resolve_roles(line: &str) -> String {
             }
         }
 
-        let Some((start, prefix_len)) = best else { break };
+        let Some((start, prefix_len)) = best else {
+            break;
+        };
         let after = &rest[start + prefix_len..];
         // An unterminated role is malformed source; leave it exactly as it is
         // rather than guessing where it was meant to end.
@@ -502,8 +516,12 @@ fn find_file_recursive(dir: &Path, target: &str) -> Option<std::path::PathBuf> {
 pub struct ListDocTopics;
 
 impl Tool for ListDocTopics {
-    fn name(&self) -> &'static str { "list_doc_topics" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("List Documentation Topics") }
+    fn name(&self) -> &'static str {
+        "list_doc_topics"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("List Documentation Topics")
+    }
     fn description(&self) -> &'static str {
         "Lists the pages in the local Xojo documentation index, one title and URL per line. \
          Unfiltered that is the whole index — about 1,600 entries, 150 KB — so pass a filter. \
@@ -562,9 +580,7 @@ impl Tool for ListDocTopics {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        class_summary, is_heading_at, member_anchors, member_entry, resolve_roles, tidy,
-    };
+    use super::{class_summary, is_heading_at, member_anchors, member_entry, resolve_roles, tidy};
 
     /// A page shaped like the real ones: title, description, a member table,
     /// two member entries, then trailing matter belonging to no member.
@@ -630,7 +646,9 @@ Compatibility
     #[test]
     fn roles_collapse_to_their_display_text() {
         assert_eq!(
-            resolve_roles(":ref:`Middle<string.middle>`, \":doc:`String</api/data_types/string>`\""),
+            resolve_roles(
+                ":ref:`Middle<string.middle>`, \":doc:`String</api/data_types/string>`\""
+            ),
             "Middle, \"String\""
         );
         // A role with no angle bracket is its own label.

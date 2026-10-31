@@ -27,7 +27,8 @@ fn main() {
         "/private/tmp/XojoIDE"
     };
 
-    let mut stream = UnixStream::connect(socket_path).expect("Failed to connect to Xojo IDE socket");
+    let mut stream =
+        UnixStream::connect(socket_path).expect("Failed to connect to Xojo IDE socket");
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream.write_all(&payload).expect("Failed to send");
     stream.flush().ok();
@@ -42,7 +43,9 @@ fn main() {
                 // Check if we have a complete response (ends with NUL or contains our tag).
                 let data = &buf[..total];
                 for chunk in data.split(|&b| b == 0) {
-                    if chunk.is_empty() { continue; }
+                    if chunk.is_empty() {
+                        continue;
+                    }
                     if let Ok(s) = std::str::from_utf8(chunk)
                         && s.contains(&tag)
                     {

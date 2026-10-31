@@ -68,7 +68,9 @@ pub fn ends_with_line_continuation(script: &str) -> bool {
     {
         return false;
     }
-    let Some(before) = code.strip_suffix('_') else { return false };
+    let Some(before) = code.strip_suffix('_') else {
+        return false;
+    };
     match before.chars().last() {
         None => true,
         Some(c) => !(c.is_ascii_alphanumeric() || c == '_' || !c.is_ascii()),
@@ -93,7 +95,9 @@ pub enum Kind {
 /// A scriptError list holds an error unless every entry's type ends in
 /// "warning". Anything that is not a list of such entries counts as an error.
 fn script_error_has_error(value: &Value) -> bool {
-    let Some(items) = value.as_array() else { return true };
+    let Some(items) = value.as_array() else {
+        return true;
+    };
     items.iter().any(|entry| {
         !entry
             .get("type")
@@ -105,10 +109,14 @@ fn script_error_has_error(value: &Value) -> bool {
 /// A buildError the IDE is known to send holds only non-empty "errors" and/or
 /// "warnings" lists; any other shape is not taken for a clean build.
 fn build_error_kind(value: &Value) -> Kind {
-    let Some(obj) = value.as_object().filter(|o| !o.is_empty()) else { return Kind::Error };
+    let Some(obj) = value.as_object().filter(|o| !o.is_empty()) else {
+        return Kind::Error;
+    };
     let mut warning = false;
     for (key, list) in obj {
-        let Some(items) = list.as_array() else { return Kind::Error };
+        let Some(items) = list.as_array() else {
+            return Kind::Error;
+        };
         match key.as_str() {
             "errors" if !items.is_empty() => return Kind::Error,
             "warnings" if !items.is_empty() => warning = true,
@@ -135,8 +143,12 @@ fn open_errors_are_warnings(value: &Value) -> bool {
 }
 
 pub fn kind(envelope: &Value) -> Kind {
-    let Some(response) = envelope.get("response") else { return Kind::Unknown };
-    let Some(obj) = response.as_object() else { return Kind::Output };
+    let Some(response) = envelope.get("response") else {
+        return Kind::Unknown;
+    };
+    let Some(obj) = response.as_object() else {
+        return Kind::Output;
+    };
     if obj.is_empty() {
         return Kind::Empty;
     }
@@ -200,18 +212,27 @@ pub fn merge(mut frames: Vec<Value>) -> Option<Value> {
         return frames.pop();
     }
     let says_something = |f: &Value| f.get("response").and_then(Value::as_str) != Some("");
-    let primary = [Kind::Error, Kind::Output, Kind::Warning, Kind::Empty, Kind::Unknown]
-        .iter()
-        .find_map(|&k| {
-            frames
-                .iter()
-                .position(|f| kind(f) == k && (k != Kind::Output || says_something(f)))
-        })
-        // Only every part being an empty printed string gets here; that is
-        // still the script's answer.
-        .unwrap_or(0);
+    let primary = [
+        Kind::Error,
+        Kind::Output,
+        Kind::Warning,
+        Kind::Empty,
+        Kind::Unknown,
+    ]
+    .iter()
+    .find_map(|&k| {
+        frames
+            .iter()
+            .position(|f| kind(f) == k && (k != Kind::Output || says_something(f)))
+    })
+    // Only every part being an empty printed string gets here; that is
+    // still the script's answer.
+    .unwrap_or(0);
     let mut merged = frames.remove(primary);
-    let parts: Vec<Value> = frames.into_iter().filter_map(|mut f| f.get_mut("response").map(Value::take)).collect();
+    let parts: Vec<Value> = frames
+        .into_iter()
+        .filter_map(|mut f| f.get_mut("response").map(Value::take))
+        .collect();
     if !parts.is_empty()
         && let Some(obj) = merged.as_object_mut()
     {
@@ -230,8 +251,14 @@ mod tests {
 
     #[test]
     fn the_marker_is_appended_unless_a_continuation_would_swallow_it() {
-        assert_eq!(with_end_marker("Print 1", "t"), "Print 1\nPrint \"xmcp-end:t\"");
-        assert_eq!(with_end_marker("Dim x As Integer = 1 + _", "t"), "Dim x As Integer = 1 + _");
+        assert_eq!(
+            with_end_marker("Print 1", "t"),
+            "Print 1\nPrint \"xmcp-end:t\""
+        );
+        assert_eq!(
+            with_end_marker("Dim x As Integer = 1 + _", "t"),
+            "Dim x As Integer = 1 + _"
+        );
         assert!(with_end_marker("", "t").ends_with("Print \"xmcp-end:t\""));
     }
 
@@ -240,13 +267,20 @@ mod tests {
         assert!(ends_with_line_continuation("x = 1 + _"));
         assert!(ends_with_line_continuation("x = 1 +_\n\n  "));
         assert!(ends_with_line_continuation("_"));
-        assert!(!ends_with_line_continuation("Var foo_ As Integer = 7\nfoo_"));
-        assert!(!ends_with_line_continuation("Var x As Integer = 1 // rename to foo_"));
+        assert!(!ends_with_line_continuation(
+            "Var foo_ As Integer = 7\nfoo_"
+        ));
+        assert!(!ends_with_line_continuation(
+            "Var x As Integer = 1 // rename to foo_"
+        ));
         assert!(!ends_with_line_continuation("x = 1 ' see bar_"));
         assert!(!ends_with_line_continuation("Rem _"));
         assert!(!ends_with_line_continuation("Print \"a // b _\""));
         assert!(ends_with_line_continuation("Print \"a // b\" + _"));
-        assert!(!ends_with_line_continuation("Var größe_"), "non-ASCII counts as a name character");
+        assert!(
+            !ends_with_line_continuation("Var größe_"),
+            "non-ASCII counts as a name character"
+        );
     }
 
     #[test]
@@ -255,19 +289,32 @@ mod tests {
         assert_eq!(kind(&part(json!(42))), Kind::Output);
         assert_eq!(kind(&part(json!({}))), Kind::Empty);
         assert_eq!(kind(&json!({ "tag": "x" })), Kind::Unknown);
-        let warning = json!({ "scriptError": [{ "type": "scriptCompilerWarning", "message": "w" }] });
+        let warning =
+            json!({ "scriptError": [{ "type": "scriptCompilerWarning", "message": "w" }] });
         assert_eq!(kind(&part(warning.clone())), Kind::Warning);
         let runtime = json!({ "scriptError": [{ "type": "scriptRuntimeError", "message": "" }] });
         assert_eq!(kind(&part(runtime)), Kind::Error);
         let untyped = json!({ "scriptError": [{ "message": "?" }] });
         assert_eq!(kind(&part(untyped)), Kind::Error);
-        assert_eq!(kind(&part(json!({ "buildError": { "errors": [1] } }))), Kind::Error);
-        assert_eq!(kind(&part(json!({ "buildError": { "warnings": [1] } }))), Kind::Warning);
-        assert_eq!(kind(&part(json!({ "buildError": { "odd": [] } }))), Kind::Error);
+        assert_eq!(
+            kind(&part(json!({ "buildError": { "errors": [1] } }))),
+            Kind::Error
+        );
+        assert_eq!(
+            kind(&part(json!({ "buildError": { "warnings": [1] } }))),
+            Kind::Warning
+        );
+        assert_eq!(
+            kind(&part(json!({ "buildError": { "odd": [] } }))),
+            Kind::Error
+        );
         assert_eq!(kind(&part(json!({ "buildError": {} }))), Kind::Error);
         let old_project = json!({ "openErrors": [{ "loadError": { "type": "IDE Version Conflict", "severity": "warning" } }] });
         assert_eq!(kind(&part(old_project)), Kind::Warning);
-        assert_eq!(kind(&part(json!({ "openErrors": [{ "loadError": {} }] }))), Kind::Error);
+        assert_eq!(
+            kind(&part(json!({ "openErrors": [{ "loadError": {} }] }))),
+            Kind::Error
+        );
         assert_eq!(kind(&part(json!({ "missingFiles": [] }))), Kind::Error);
         assert_eq!(kind(&part(json!({ "something": 1 }))), Kind::Output);
     }
@@ -278,7 +325,9 @@ mod tests {
         assert!(stops_script(&runtime));
         let warning = part(json!({ "scriptError": [{ "type": "scriptCompilerWarning" }] }));
         assert!(!stops_script(&warning));
-        assert!(!stops_script(&part(json!({ "buildError": { "errors": [1] } }))));
+        assert!(!stops_script(&part(
+            json!({ "buildError": { "errors": [1] } })
+        )));
         assert!(!stops_script(&part(json!("out"))));
     }
 
@@ -295,7 +344,12 @@ mod tests {
         assert_eq!(merge(vec![part(json!("only"))]), Some(part(json!("only"))));
 
         let warning = json!({ "scriptError": [{ "type": "scriptCompilerWarning" }] });
-        let merged = merge(vec![part(json!("first")), part(json!("second")), part(warning.clone())]).unwrap();
+        let merged = merge(vec![
+            part(json!("first")),
+            part(json!("second")),
+            part(warning.clone()),
+        ])
+        .unwrap();
         assert_eq!(merged["response"], "first");
         assert_eq!(merged["xmcp_parts"], json!(["second", warning]));
 
@@ -304,10 +358,16 @@ mod tests {
         assert_eq!(merged["response"], error, "an error outranks output");
 
         let merged = merge(vec![part(json!("")), part(json!("said"))]).unwrap();
-        assert_eq!(merged["response"], "said", "output that says something wins");
+        assert_eq!(
+            merged["response"], "said",
+            "output that says something wins"
+        );
 
         let merged = merge(vec![part(json!({})), part(warning.clone())]).unwrap();
-        assert_eq!(merged["response"], warning, "an empty answer never displaces a warning");
+        assert_eq!(
+            merged["response"], warning,
+            "an empty answer never displaces a warning"
+        );
 
         let merged = merge(vec![part(json!("")), part(json!(""))]).unwrap();
         assert_eq!(merged["response"], "");

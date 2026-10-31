@@ -56,7 +56,7 @@ pub fn ide_call(ctx: &ToolContext, script: &str, timeout: Duration) -> ToolResul
         None => {
             return ToolResult::failure(
                 "Xojo IDE is not connected. Start the IDE and restart xmcp.",
-            )
+            );
         }
     };
     match ide.send_and_receive_with_timeout(script, timeout) {
@@ -90,23 +90,17 @@ pub fn extract_response(response: &Value) -> ToolResult {
 
 /// Get a string argument, returning the default if not present.
 pub fn arg_str<'a>(args: &'a HashMap<String, Value>, name: &str, default: &'a str) -> &'a str {
-    args.get(name)
-        .and_then(|v| v.as_str())
-        .unwrap_or(default)
+    args.get(name).and_then(|v| v.as_str()).unwrap_or(default)
 }
 
 /// Get an integer argument, returning the default if not present.
 pub fn arg_i64(args: &HashMap<String, Value>, name: &str, default: i64) -> i64 {
-    args.get(name)
-        .and_then(|v| v.as_i64())
-        .unwrap_or(default)
+    args.get(name).and_then(|v| v.as_i64()).unwrap_or(default)
 }
 
 /// Get a boolean argument, returning the default if not present.
 pub fn arg_bool(args: &HashMap<String, Value>, name: &str, default: bool) -> bool {
-    args.get(name)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(default)
+    args.get(name).and_then(|v| v.as_bool()).unwrap_or(default)
 }
 
 /// Cap a string for inclusion in a user-facing error. Clips to `cap` bytes
@@ -133,7 +127,11 @@ mod tests {
         // The hint must not promise less than the enforcement assumes.
         for t in all_tools() {
             if t.mutates() {
-                assert!(!t.annotations().read_only, "{} mutates but is hinted read-only", t.name());
+                assert!(
+                    !t.annotations().read_only,
+                    "{} mutates but is hinted read-only",
+                    t.name()
+                );
             }
         }
     }
@@ -175,7 +173,7 @@ mod tests {
     fn clip_lands_on_char_boundary() {
         // 'é' is 2 bytes in UTF-8; place one straddling the cap.
         let mut input = "a".repeat(199);
-        input.push('é');               // bytes 199, 200
+        input.push('é'); // bytes 199, 200
         input.push_str(&"b".repeat(50));
         let out = truncate_for_error(&input, 200);
         // Cap 200 falls inside the multi-byte char → boundary walked back to 199.

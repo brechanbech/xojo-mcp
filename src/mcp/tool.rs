@@ -120,16 +120,31 @@ pub struct ToolAnnotations {
 impl ToolAnnotations {
     /// A tool that only observes.
     pub const fn read_only(title: &'static str) -> Self {
-        Self { title, read_only: true, destructive: false, idempotent: true, open_world: false }
+        Self {
+            title,
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: false,
+        }
     }
 
     /// A tool that changes something, local to the IDE and its files.
     pub const fn writes(title: &'static str, destructive: bool, idempotent: bool) -> Self {
-        Self { title, read_only: false, destructive, idempotent, open_world: false }
+        Self {
+            title,
+            read_only: false,
+            destructive,
+            idempotent,
+            open_world: false,
+        }
     }
 
     pub const fn open_world(self) -> Self {
-        Self { open_world: true, ..self }
+        Self {
+            open_world: true,
+            ..self
+        }
     }
 
     pub fn to_json(self) -> Value {
@@ -174,10 +189,7 @@ fn compatible(param_type: ParamType, arg_type: ParamType) -> bool {
 
 /// Validate arguments against a tool's parameter definitions.
 /// Returns Ok(()) if valid, Err(message) if invalid.
-pub fn validate_arguments(
-    tool: &dyn Tool,
-    args: &HashMap<String, Value>,
-) -> Result<(), String> {
+pub fn validate_arguments(tool: &dyn Tool, args: &HashMap<String, Value>) -> Result<(), String> {
     let params = tool.parameters();
 
     // Check required parameters are present and types match.
@@ -196,10 +208,7 @@ pub fn validate_arguments(
                 ));
             }
         } else if param.required {
-            return Err(format!(
-                "Missing the required `{}` parameter.",
-                param.name
-            ));
+            return Err(format!("Missing the required `{}` parameter.", param.name));
         }
     }
 
@@ -235,7 +244,10 @@ pub fn tool_to_json(tool: &dyn Tool) -> Value {
             "type".into(),
             Value::String(param.param_type.as_str().into()),
         );
-        prop.insert("description".into(), Value::String(param.description.into()));
+        prop.insert(
+            "description".into(),
+            Value::String(param.description.into()),
+        );
         if let Some(ref default) = param.default {
             prop.insert("default".into(), default.clone());
         }

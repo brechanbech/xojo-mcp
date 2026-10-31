@@ -18,12 +18,8 @@ pub fn build_string_variable_script(var_name: &str, value: &str) -> String {
 
     if !value.ends_with('\n') {
         script_lines.push("Dim __eol As String = EndOfLine".into());
-        script_lines.push(format!(
-            "If {var_name}.Length >= __eol.Length Then"
-        ));
-        script_lines.push(format!(
-            "  If {var_name}.Right(__eol.Length) = __eol Then"
-        ));
+        script_lines.push(format!("If {var_name}.Length >= __eol.Length Then"));
+        script_lines.push(format!("  If {var_name}.Right(__eol.Length) = __eol Then"));
         script_lines.push(format!(
             "    {var_name} = {var_name}.Left({var_name}.Length - __eol.Length)"
         ));
@@ -73,7 +69,10 @@ mod tests {
     #[test]
     fn a_line_break_never_reaches_the_literal() {
         assert_eq!(escape_ide_string("a\nb"), "a\" + EndOfLine + \"b");
-        assert_eq!(escape_ide_string("a\r\nb\rc"), "a\" + EndOfLine + \"b\" + EndOfLine + \"c");
+        assert_eq!(
+            escape_ide_string("a\r\nb\rc"),
+            "a\" + EndOfLine + \"b\" + EndOfLine + \"c"
+        );
         assert!(!escape_ide_string("x\r\ny\n").contains(['\n', '\r']));
     }
 

@@ -138,7 +138,12 @@ impl Server {
             .as_array()
             .unwrap_or_else(|| panic!("tools/list returned no array: {response}"))
             .iter()
-            .map(|tool| tool["name"].as_str().expect("a tool has no name").to_string())
+            .map(|tool| {
+                tool["name"]
+                    .as_str()
+                    .expect("a tool has no name")
+                    .to_string()
+            })
             .collect()
     }
 }
@@ -260,7 +265,12 @@ fn every_listed_tool_states_all_four_behaviour_hints() {
     for tool in tools {
         let name = tool["name"].as_str().expect("a tool has no name");
         let a = &tool["annotations"];
-        for hint in ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] {
+        for hint in [
+            "readOnlyHint",
+            "destructiveHint",
+            "idempotentHint",
+            "openWorldHint",
+        ] {
             assert!(a[hint].is_boolean(), "{name} does not state {hint}: {a}");
         }
         assert!(
@@ -285,14 +295,21 @@ fn read_tools_are_hinted_read_only_and_writes_are_not() {
             .clone()
     };
 
-    for tool in ["get_code", "list_project_items", "search_docs", "get_system_log"] {
+    for tool in [
+        "get_code",
+        "list_project_items",
+        "search_docs",
+        "get_system_log",
+    ] {
         assert_eq!(hint(tool), true, "{tool} should be read-only");
     }
     // get_debug_log is not: its `clear` deletes the log file.
-    for tool in MUTATING
-        .iter()
-        .chain(&["run_project", "build_project", "run_ide_script", "get_debug_log"])
-    {
+    for tool in MUTATING.iter().chain(&[
+        "run_project",
+        "build_project",
+        "run_ide_script",
+        "get_debug_log",
+    ]) {
         assert_eq!(hint(tool), false, "{tool} should not be read-only");
     }
 }

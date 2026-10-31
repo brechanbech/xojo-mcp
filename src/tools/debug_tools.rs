@@ -14,9 +14,13 @@ const DEBUG_LOG_PATH: &str = "/tmp/xmcp_debug.log";
 pub struct GetDebugLog;
 
 impl Tool for GetDebugLog {
-    fn name(&self) -> &'static str { "get_debug_log" }
+    fn name(&self) -> &'static str {
+        "get_debug_log"
+    }
     // Not read-only: `clear` deletes the log file.
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Get Debug Log", true, true) }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::writes("Get Debug Log", true, true)
+    }
     fn description(&self) -> &'static str {
         "Returns /tmp/xmcp_debug.log, which a built Xojo app writes from its \
          App.UnhandledException handler when it crashes (usage-guide.md has the handler to \
@@ -69,8 +73,12 @@ impl Tool for GetDebugLog {
 pub struct GetSystemLog;
 
 impl Tool for GetSystemLog {
-    fn name(&self) -> &'static str { "get_system_log" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Get System Log") }
+    fn name(&self) -> &'static str {
+        "get_system_log"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Get System Log")
+    }
     fn description(&self) -> &'static str {
         "Returns recent System.DebugLog output of a Xojo app from the macOS unified log \
          (`log show`): a debug run started by run_project, or a built app. Only lines the \
@@ -80,21 +88,24 @@ impl Tool for GetSystemLog {
          and query again; prefer this over MessageBox for tracing. Needs no IDE."
     }
     fn parameters(&self) -> &[ToolParam] {
-        static P: &[ToolParam] = &[ToolParam {
-            name: "process_name",
-            param_type: ParamType::String,
-            description: "Exact process name: the app's name plus '.debug' for a debug run \
+        static P: &[ToolParam] = &[
+            ToolParam {
+                name: "process_name",
+                param_type: ParamType::String,
+                description: "Exact process name: the app's name plus '.debug' for a debug run \
                           (e.g. 'MyApp.debug'), or the app's name for a built app. Letters, \
                           digits, spaces, '.', '_' and '-' only.",
-            required: true,
-            default: None,
-        }, ToolParam {
-            name: "seconds",
-            param_type: ParamType::Integer,
-            description: "How far back to look, in seconds. Default 60, max 3600.",
-            required: false,
-            default: None,
-        }];
+                required: true,
+                default: None,
+            },
+            ToolParam {
+                name: "seconds",
+                param_type: ParamType::Integer,
+                description: "How far back to look, in seconds. Default 60, max 3600.",
+                required: false,
+                default: None,
+            },
+        ];
         P
     }
     fn run(&self, args: &HashMap<String, Value>, _ctx: &ToolContext) -> ToolResult {
@@ -175,7 +186,11 @@ fn format_system_log(stdout: &str, process_name: &str, seconds: i64) -> String {
     const MAX: usize = 200;
     let shown: Vec<&str> = raw_lines.iter().take(MAX).copied().collect();
     let note = if raw_lines.len() > shown.len() {
-        format!(" (showing the first {} of {})", shown.len(), raw_lines.len())
+        format!(
+            " (showing the first {} of {})",
+            shown.len(),
+            raw_lines.len()
+        )
     } else {
         String::new()
     };

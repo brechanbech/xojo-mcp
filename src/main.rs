@@ -7,7 +7,11 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "xmcp", version, about = "MCP server for controlling the Xojo IDE")]
+#[command(
+    name = "xmcp",
+    version,
+    about = "MCP server for controlling the Xojo IDE"
+)]
 struct Cli {
     /// Enable verbose logging to stderr
     #[arg(short, long)]
@@ -50,7 +54,10 @@ fn main() {
     let all_tools = tools::all_tools();
 
     if cli.verbose {
-        let active = all_tools.iter().filter(|t| !(read_only && t.mutates())).count();
+        let active = all_tools
+            .iter()
+            .filter(|t| !(read_only && t.mutates()))
+            .count();
         if read_only {
             eprintln!(
                 "xmcp server configured with {active} tools ({} mutating tools disabled by read-only mode).",
@@ -61,8 +68,14 @@ fn main() {
         }
     }
 
-    let server =
-        mcp::server::Server::new(all_tools, Some(ide), docs_path, exe_dir, cli.verbose, read_only);
+    let server = mcp::server::Server::new(
+        all_tools,
+        Some(ide),
+        docs_path,
+        exe_dir,
+        cli.verbose,
+        read_only,
+    );
     server.run();
 }
 

@@ -8,8 +8,12 @@ use crate::tools::*;
 pub struct EstimateRequestCost;
 
 impl Tool for EstimateRequestCost {
-    fn name(&self) -> &'static str { "estimate_request_cost" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::read_only("Estimate Request Cost") }
+    fn name(&self) -> &'static str {
+        "estimate_request_cost"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::read_only("Estimate Request Cost")
+    }
     fn description(&self) -> &'static str {
         "Rates a planned request's likely token cost as LOW, MEDIUM or HIGH, with the reasons \
          and cheaper ways to do it. It is a keyword heuristic over the request text and the \
@@ -18,23 +22,26 @@ impl Tool for EstimateRequestCost {
          documentation-heavy or project-wide work."
     }
     fn parameters(&self) -> &[ToolParam] {
-        static P: &[ToolParam] = &[ToolParam {
-            name: "request",
-            param_type: ParamType::String,
-            description: "The task in plain words, e.g. 'Add a ListBox to Window1'. Longer \
+        static P: &[ToolParam] = &[
+            ToolParam {
+                name: "request",
+                param_type: ParamType::String,
+                description: "The task in plain words, e.g. 'Add a ListBox to Window1'. Longer \
                           text and words such as 'entire', 'refactor' or 'docs' raise the \
                           rating.",
-            required: true,
-            default: None,
-        }, ToolParam {
-            name: "planned_tools",
-            param_type: ParamType::String,
-            description: "Comma-separated tool names you expect to call, e.g. 'search_docs, \
+                required: true,
+                default: None,
+            },
+            ToolParam {
+                name: "planned_tools",
+                param_type: ParamType::String,
+                description: "Comma-separated tool names you expect to call, e.g. 'search_docs, \
                           get_code'. Only list_doc_topics, lookup_class, search_docs, get_code \
                           and set_code affect the rating.",
-            required: false,
-            default: None,
-        }];
+                required: false,
+                default: None,
+            },
+        ];
         P
     }
     fn run(&self, args: &HashMap<String, Value>, _ctx: &ToolContext) -> ToolResult {
@@ -56,8 +63,18 @@ impl Tool for EstimateRequestCost {
 
         // Broad scope keywords.
         let broad_keywords = [
-            "entire", "whole", "full", "everything", "all files", "codebase",
-            "architecture", "refactor", "analyze", "analyse", "review", "audit",
+            "entire",
+            "whole",
+            "full",
+            "everything",
+            "all files",
+            "codebase",
+            "architecture",
+            "refactor",
+            "analyze",
+            "analyse",
+            "review",
+            "audit",
         ];
         if has_any_keyword(&request_lower, &broad_keywords) {
             score += 3;
@@ -73,7 +90,13 @@ impl Tool for EstimateRequestCost {
 
         // Focused keywords (reduce cost).
         let focused_keywords = [
-            "add", "rename", "single", "window1", "listbox", "button", "one control",
+            "add",
+            "rename",
+            "single",
+            "window1",
+            "listbox",
+            "button",
+            "one control",
         ];
         if has_any_keyword(&request_lower, &focused_keywords) {
             score -= 1;
@@ -88,10 +111,8 @@ impl Tool for EstimateRequestCost {
                 match *tool {
                     "list_doc_topics" => {
                         score += 3;
-                        reasons
-                            .push("list_doc_topics returns large output".to_string());
-                        alternatives
-                            .push("Use a narrow filter with list_doc_topics".to_string());
+                        reasons.push("list_doc_topics returns large output".to_string());
+                        alternatives.push("Use a narrow filter with list_doc_topics".to_string());
                     }
                     "lookup_class" => {
                         score += 2;
@@ -102,14 +123,12 @@ impl Tool for EstimateRequestCost {
                     "search_docs" => {
                         score += 2;
                         reasons.push("search_docs can return large context".to_string());
-                        alternatives.push(
-                            "Use low max_results and context_lines values".to_string(),
-                        );
+                        alternatives
+                            .push("Use low max_results and context_lines values".to_string());
                     }
                     "get_code" | "set_code" => {
                         score += 1;
-                        alternatives
-                            .push("Process one location at a time".to_string());
+                        alternatives.push("Process one location at a time".to_string());
                     }
                     _ => {}
                 }

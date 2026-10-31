@@ -31,7 +31,11 @@ pub fn agentic_mode_saved(manifest: &str) -> bool {
 /// line reads `<location>, line <n>: <message>`; the message can itself
 /// contain colons, so lines are passed through whole rather than split.
 pub fn format_compile_errors(raw: &str) -> String {
-    let errors: Vec<&str> = raw.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let errors: Vec<&str> = raw
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
     let noun = if errors.len() == 1 { "error" } else { "errors" };
     let mut msg = format!("Compile failed with {} {noun}:\n", errors.len());
     for e in &errors {
@@ -146,7 +150,10 @@ fn agentic_run(
 
 /// The project directory: the argument when given, else the folder of the
 /// project the IDE has open.
-fn resolve_project_dir(args: &HashMap<String, Value>, ctx: &ToolContext) -> Result<PathBuf, ToolResult> {
+fn resolve_project_dir(
+    args: &HashMap<String, Value>,
+    ctx: &ToolContext,
+) -> Result<PathBuf, ToolResult> {
     let given = arg_str(args, "project_dir", "");
     let dir = if !given.trim().is_empty() {
         PathBuf::from(given.trim())
@@ -166,7 +173,11 @@ fn resolve_project_dir(args: &HashMap<String, Value>, ctx: &ToolContext) -> Resu
         }
         match Path::new(path).parent() {
             Some(p) => p.to_path_buf(),
-            None => return Err(ToolResult::failure(format!("No folder for project path '{path}'."))),
+            None => {
+                return Err(ToolResult::failure(format!(
+                    "No folder for project path '{path}'."
+                )));
+            }
         }
     };
     if !dir.is_dir() {
@@ -184,8 +195,12 @@ fn resolve_project_dir(args: &HashMap<String, Value>, ctx: &ToolContext) -> Resu
 pub struct AgenticRun;
 
 impl Tool for AgenticRun {
-    fn name(&self) -> &'static str { "agentic_run" }
-    fn annotations(&self) -> ToolAnnotations { ToolAnnotations::writes("Run in Agentic Mode", false, false) }
+    fn name(&self) -> &'static str {
+        "agentic_run"
+    }
+    fn annotations(&self) -> ToolAnnotations {
+        ToolAnnotations::writes("Run in Agentic Mode", false, false)
+    }
     fn description(&self) -> &'static str {
         "Agentic Mode only (Xojo 2026r3+): runs the project and returns its compile \
          errors, if any. Unlike run_project, this reports real compiler errors with \
@@ -200,20 +215,23 @@ impl Tool for AgenticRun {
          edits, so this may be called without asking each time."
     }
     fn parameters(&self) -> &[ToolParam] {
-        static P: &[ToolParam] = &[ToolParam {
-            name: "project_dir",
-            param_type: ParamType::String,
-            description: "Absolute path of the folder containing the .xojo_project. Omit to \
+        static P: &[ToolParam] = &[
+            ToolParam {
+                name: "project_dir",
+                param_type: ParamType::String,
+                description: "Absolute path of the folder containing the .xojo_project. Omit to \
                           use the project open in the IDE, which needs the IDE socket.",
-            required: false,
-            default: None,
-        }, ToolParam {
-            name: "wait_seconds",
-            param_type: ParamType::Integer,
-            description: "How long to wait for errors or a launch once Xojo starts the run (default 15, max 120). Raise it for large projects.",
-            required: false,
-            default: None,
-        }];
+                required: false,
+                default: None,
+            },
+            ToolParam {
+                name: "wait_seconds",
+                param_type: ParamType::Integer,
+                description: "How long to wait for errors or a launch once Xojo starts the run (default 15, max 120). Raise it for large projects.",
+                required: false,
+                default: None,
+            },
+        ];
         P
     }
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
@@ -224,10 +242,9 @@ impl Tool for AgenticRun {
         let wait = Duration::from_secs(arg_i64(args, "wait_seconds", 15).clamp(1, 120) as u64);
 
         match agentic_run(&dir, PICKUP_BUDGET, wait, &debug_app_pids) {
-            Err(e) => ToolResult::failure(format!(
-                "Could not drive a run in '{}': {e}",
-                dir.display()
-            )),
+            Err(e) => {
+                ToolResult::failure(format!("Could not drive a run in '{}': {e}", dir.display()))
+            }
             Ok(RunOutcome::NotPickedUp) => ToolResult::failure(format!(
                 "Xojo did not pick up {RUN_TRIGGER} within {} s, so Agentic Mode is not \
                  on for this project, the project is not open, or the IDE is busy. \
@@ -281,7 +298,9 @@ mod tests {
 
     #[test]
     fn saved_flag_is_read_from_the_manifest() {
-        assert!(agentic_mode_saved("Type=Desktop\nAgenticMode=True\nMDI=0\n"));
+        assert!(agentic_mode_saved(
+            "Type=Desktop\nAgenticMode=True\nMDI=0\n"
+        ));
         assert!(!agentic_mode_saved("Type=Desktop\nAgenticMode=False\n"));
         assert!(!agentic_mode_saved("Type=Desktop\nMDI=0\n"));
     }
@@ -292,8 +311,12 @@ mod tests {
                    Window1.Opening, line 2: This item does not exist: UndefinedThing";
         let msg = format_compile_errors(raw);
         assert!(msg.starts_with("Compile failed with 2 errors:\n"));
-        assert!(msg.contains("  Window1.Opening, line 2: This item does not exist: UndefinedThing\n"));
-        assert!(format_compile_errors("A, line 1: x").starts_with("Compile failed with 1 error:\n"));
+        assert!(
+            msg.contains("  Window1.Opening, line 2: This item does not exist: UndefinedThing\n")
+        );
+        assert!(
+            format_compile_errors("A, line 1: x").starts_with("Compile failed with 1 error:\n")
+        );
     }
 
     #[test]
@@ -302,7 +325,13 @@ mod tests {
         fake_ide(&dir, Duration::from_millis(300), |d| {
             std::fs::write(d.join(COMPILE_ERRORS), "App.Foo, line 1: bad").unwrap();
         });
-        let out = agentic_run(&dir, Duration::from_secs(2), Duration::from_secs(5), &no_pids).unwrap();
+        let out = agentic_run(
+            &dir,
+            Duration::from_secs(2),
+            Duration::from_secs(5),
+            &no_pids,
+        )
+        .unwrap();
         assert_eq!(out, RunOutcome::Errors("App.Foo, line 1: bad".into()));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -312,7 +341,13 @@ mod tests {
         let dir = scratch_dir();
         std::fs::write(dir.join(COMPILE_ERRORS), "Old.Thing, line 9: stale").unwrap();
         fake_ide(&dir, Duration::from_millis(200), |_| {});
-        let out = agentic_run(&dir, Duration::from_secs(2), Duration::from_secs(1), &no_pids).unwrap();
+        let out = agentic_run(
+            &dir,
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+            &no_pids,
+        )
+        .unwrap();
         assert_eq!(out, RunOutcome::Quiet);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -320,7 +355,13 @@ mod tests {
     #[test]
     fn an_unanswered_trigger_is_taken_back() {
         let dir = scratch_dir();
-        let out = agentic_run(&dir, Duration::from_millis(300), Duration::from_secs(1), &no_pids).unwrap();
+        let out = agentic_run(
+            &dir,
+            Duration::from_millis(300),
+            Duration::from_secs(1),
+            &no_pids,
+        )
+        .unwrap();
         assert_eq!(out, RunOutcome::NotPickedUp);
         assert!(!dir.join(RUN_TRIGGER).exists());
         std::fs::remove_dir_all(&dir).ok();
