@@ -1,5 +1,7 @@
 # xojo-mcp
 
+[![CI](https://codeberg.org/brechanbech/xojo-mcp/actions/workflows/ci.yml/badge.svg)](https://codeberg.org/brechanbech/xojo-mcp/actions)
+
 An MCP (Model Context Protocol) server that gives AI assistants direct control
 over the Xojo IDE. Communicates via stdin/stdout JSON-RPC and forwards IDE
 commands via a Unix domain socket to the running Xojo IDE process.
