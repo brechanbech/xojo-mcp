@@ -137,6 +137,46 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_with_write_args_is_not_hinted_read_only() {
+        // Outside read-only mode the write half is reachable, so the hint must
+        // say so. Read-only mode re-hints the reduced form itself.
+        for t in all_tools() {
+            if !t.write_args().is_empty() {
+                assert!(
+                    !t.annotations().read_only,
+                    "{} can write but is hinted read-only",
+                    t.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn write_args_name_real_optional_parameters() {
+        // A write argument that is not a parameter gates nothing; a required
+        // one would leave the read-only form uncallable.
+        for t in all_tools() {
+            for arg in t.write_args() {
+                let param = t
+                    .parameters()
+                    .iter()
+                    .find(|p| p.name == *arg)
+                    .unwrap_or_else(|| panic!("{}: write arg `{arg}` is no parameter", t.name()));
+                assert!(
+                    !param.required,
+                    "{}: write arg `{arg}` is required",
+                    t.name()
+                );
+            }
+            assert!(
+                !(t.mutates() && !t.write_args().is_empty()),
+                "{} is both fully blocked and partly gated",
+                t.name()
+            );
+        }
+    }
+
+    #[test]
     fn every_tool_has_a_distinct_title() {
         let mut titles = HashSet::new();
         for t in all_tools() {

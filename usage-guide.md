@@ -25,9 +25,10 @@ If several Xojo IDEs are running side by side, each was started with its own `XO
 xmcp may be running in **read-only mode** (started with `--read-only` or
 `XMCP_READ_ONLY=1`). When it is, the tools that modify the project —
 `set_code`, `edit_code`, `set_selected_text`, `set_declaration`,
-`create_project_item`, `property_value`, `constant_value`,
-`get_item_description`, `revert_project`, `save_project`, and `run_ide_script` — are not listed
-and cannot be called. If you don't see those
+`create_project_item`, `revert_project`, `save_project`, and `run_ide_script` —
+are not listed and cannot be called. `property_value`, `constant_value` and
+`get_item_description` stay available for reading only: they are listed
+without `value`, and a call that passes `value` is refused. If you don't see those
 tools, the user has intentionally opened the project for browsing, building,
 running, and analysis only. Do not try to work around this or ask the user to
 disable it unless they bring it up; help them within the read tools available.

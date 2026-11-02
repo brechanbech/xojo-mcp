@@ -276,7 +276,7 @@ flag or environment variable.)
 
 ### What it actually blocks
 
-Read-only mode blocks the eleven tools that can modify the project:
+Read-only mode blocks the eight tools that can modify the project:
 
 | Tool | What it would otherwise do |
 | --- | --- |
@@ -285,21 +285,27 @@ Read-only mode blocks the eleven tools that can modify the project:
 | `set_selected_text` | Replace the current text selection in the code editor |
 | `set_declaration` | Rename or retype a method or property |
 | `create_project_item` | Add a new class, module, window, or other item |
-| `property_value` | Change a framework property such as `App.OptimizationLevel` |
-| `constant_value` | Change a project constant's value |
-| `get_item_description` | Change an item's description |
 | `revert_project` | Discard unsaved changes back to the last save |
 | `save_project` | Write the project's current in-memory state to disk |
 | `run_ide_script` | Run an arbitrary IDE script, which can do any of the above and more |
 
-`property_value`, `constant_value` and `get_item_description` also *read*, but each
-is one tool, so read-only mode blocks the read along with the write.
+`run_ide_script` is blocked even though it is often used just to read. An IDE script can
+set an item's code, save, create items and run shell commands through `DoShellCommand`.
+The server can't tell a script that only reads from one that writes, so read-only mode
+blocks the tool. Use the dedicated read tools instead, such as `list_project_items`,
+`get_code` and `get_project_info`.
 
-`run_ide_script` is blocked for the same reason, although it is often used just to read. An
-IDE script can set an item's code, save, create items and run shell commands through
-`DoShellCommand`. The server can't tell a script that only reads from one that writes, so
-read-only mode blocks the tool. Use the dedicated read tools instead, such as
-`list_project_items`, `get_code` and `get_project_info`.
+Three more tools both read and write, and read-only mode keeps only their read:
+
+| Tool | Still reads | Blocked write |
+| --- | --- | --- |
+| `property_value` | A framework property such as `App.OptimizationLevel` | Changing it |
+| `constant_value` | A project constant's value | Changing it |
+| `get_item_description` | An item's description | Changing it |
+
+Each of these reads when called without `value` and writes when called with it. In
+read-only mode they are listed without the `value` parameter, and any call that passes
+`value`, even as `null`, is refused.
 
 ### Tool annotations
 
@@ -311,7 +317,9 @@ on the project, so they are stricter than read-only mode: `build_project`,
 `run_project` and `agentic_run` leave the source alone and stay available in
 read-only mode, but they write build output or launch an app, so they are not
 hinted read-only. `openWorldHint` is false everywhere except `run_ide_script`,
-whose `DoShellCommand` can reach anything.
+whose `DoShellCommand` can reach anything. In read-only mode, `property_value`,
+`constant_value` and `get_item_description` are hinted read-only, because only
+their read is available.
 
 Everything else remains fully available — navigating and listing items, reading
 code (`get_code`), building (`build_project`), running (`run_project`),
@@ -329,15 +337,17 @@ project itself, so both are considered read-only-safe.
 The restriction is applied in two independent layers, so it holds even if a
 client or model misbehaves:
 
-1. **The blocked tools are removed from the tool list.** When the assistant asks
-   the server what tools exist (`tools/list`), the eleven blocked tools are
-   filtered out. The model never sees them, so it cannot choose to call
+1. **The blocked tools and arguments are removed from the tool list.** When the
+   assistant asks the server what tools exist (`tools/list`), the eight blocked
+   tools are filtered out, and the three read-and-write tools are listed without
+   `value`. The model never sees a way to write, so it cannot choose to call
    something it does not know exists. This is what makes the mode effective in
    practice rather than merely defensive.
-2. **Any call to a blocked tool is rejected.** If a request to one of the eleven
-   arrives anyway — a stale tool list, a hand-crafted call, a buggy client — the
-   server refuses it before the request ever reaches the IDE, returning a clear
-   error explaining that the tool is disabled in read-only mode.
+2. **Any call that would write is rejected.** If a call to one of the eight, or
+   one of the three with `value`, arrives anyway — a stale tool list, a
+   hand-crafted call, a buggy client — the server refuses it before the request
+   ever reaches the IDE, returning a clear error explaining that read-only mode
+   doesn't allow it.
 
 The assistant is also told, via the embedded usage guide, that when it sees a
 reduced tool set the project is intentionally read-only and it should work

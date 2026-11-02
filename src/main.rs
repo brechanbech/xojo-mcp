@@ -22,9 +22,10 @@ struct Cli {
     docs_path: Option<PathBuf>,
 
     /// Read-only mode: hide and reject the tools that can modify the project
-    /// (the code and declaration editors, create_project_item, the property,
-    /// constant and description setters, revert_project, save_project and
-    /// run_ide_script). Can also be enabled by setting XMCP_READ_ONLY=1.
+    /// (the code and declaration editors, create_project_item, revert_project,
+    /// save_project and run_ide_script), and limit property_value,
+    /// constant_value and get_item_description to reading. Can also be enabled
+    /// by setting XMCP_READ_ONLY=1.
     #[arg(long)]
     read_only: bool,
 }
@@ -60,8 +61,13 @@ fn main() {
             .filter(|t| !(read_only && t.mutates()))
             .count();
         if read_only {
+            let reads_only = all_tools
+                .iter()
+                .filter(|t| !t.write_args().is_empty())
+                .count();
             eprintln!(
-                "xmcp server configured with {active} tools ({} mutating tools disabled by read-only mode).",
+                "xmcp server configured with {active} tools ({} mutating tools disabled and \
+                 {reads_only} limited to reading by read-only mode).",
                 all_tools.len() - active
             );
         } else {

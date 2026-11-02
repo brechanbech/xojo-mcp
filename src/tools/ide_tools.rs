@@ -1092,9 +1092,9 @@ impl Tool for GetItemDescription {
     fn annotations(&self) -> ToolAnnotations {
         ToolAnnotations::writes("Get or Set Item Description", true, true)
     }
-    // Writes when given a value, so it is a mutating tool, as property_value is.
-    fn mutates(&self) -> bool {
-        true
+    // Writes only when given a value, so read-only mode keeps the read.
+    fn write_args(&self) -> &'static [&'static str] {
+        &["value"]
     }
     fn description(&self) -> &'static str {
         "Reads or sets the Description of a project item or member (the note shown in the \
@@ -1181,9 +1181,9 @@ impl Tool for ConstantValue {
     fn annotations(&self) -> ToolAnnotations {
         ToolAnnotations::writes("Get or Set Constant", true, true)
     }
-    // Writes when given a value, so it is a mutating tool, as property_value is.
-    fn mutates(&self) -> bool {
-        true
+    // Writes only when given a value, so read-only mode keeps the read.
+    fn write_args(&self) -> &'static [&'static str] {
+        &["value"]
     }
     fn description(&self) -> &'static str {
         "Gets or sets the value of a project constant in the Xojo IDE. \
@@ -1241,10 +1241,9 @@ impl Tool for PropertyValue {
     fn annotations(&self) -> ToolAnnotations {
         ToolAnnotations::writes("Get or Set Property", true, true)
     }
-    // A set is a project change; a get is not, but the tool is one tool, so it
-    // is gated as the more dangerous of the two.
-    fn mutates(&self) -> bool {
-        true
+    // Writes only when given a value, so read-only mode keeps the read.
+    fn write_args(&self) -> &'static [&'static str] {
+        &["value"]
     }
     fn description(&self) -> &'static str {
         "Gets or sets a FRAMEWORK property of a project item in the Xojo IDE — e.g. \

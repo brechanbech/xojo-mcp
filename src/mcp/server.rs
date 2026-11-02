@@ -184,7 +184,7 @@ impl Server {
             .tools
             .iter()
             .filter(|t| !self.is_blocked(t.as_ref()))
-            .map(|t| tool_to_json(t.as_ref()))
+            .map(|t| tool_to_json(t.as_ref(), self.read_only))
             .collect();
         JsonRpcResponse::success(id.clone(), json!({ "tools": tools }))
     }
@@ -248,6 +248,25 @@ impl Server {
             }
             None => std::collections::HashMap::new(),
         };
+
+        // A get/set tool stays available read-only, but only for the get:
+        // passing one of its write arguments, even as null, is a set.
+        if self.read_only
+            && let Some(arg) = tool
+                .write_args()
+                .iter()
+                .find(|a| arguments.contains_key(**a))
+        {
+            return JsonRpcResponse::error(
+                id.clone(),
+                ErrorCode::InvalidRequest,
+                format!(
+                    "Passing `{arg}` makes `{tool_name}` modify the project, which is disabled \
+                     because xmcp is running in read-only mode. Call it without `{arg}` to read \
+                     the current value."
+                ),
+            );
+        }
 
         if let Err(msg) = validate_arguments(tool.as_ref(), &arguments) {
             if self.verbose {
@@ -347,9 +366,6 @@ mod tests {
     const MUTATING: &[&str] = &[
         "set_code",
         "edit_code",
-        "property_value",
-        "constant_value",
-        "get_item_description",
         "set_declaration",
         "set_selected_text",
         "create_project_item",
@@ -357,6 +373,9 @@ mod tests {
         "save_project",
         "run_ide_script",
     ];
+
+    /// The get/set tools read-only mode limits to reading.
+    const READS_ONLY: &[&str] = &["property_value", "constant_value", "get_item_description"];
 
     fn server(read_only: bool) -> Server {
         Server::new(
@@ -418,5 +437,75 @@ mod tests {
         // Success envelope with an isError tool result (IDE not connected),
         // not a JSON-RPC error about read-only mode.
         assert!(resp.error.is_none());
+    }
+
+    fn listed(server: &Server, name: &str) -> Value {
+        let resp = server.handle_tools_list(&Value::Null);
+        resp.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == name)
+            .unwrap_or_else(|| panic!("{name} not listed"))
+            .clone()
+    }
+
+    fn call(server: &Server, name: &str, arguments: Value) -> JsonRpcResponse {
+        let req = JsonRpcRequest {
+            id: Some(json!(1)),
+            method: Some("tools/call".into()),
+            params: Some(json!({ "name": name, "arguments": arguments })),
+        };
+        server.handle_tools_call(&json!(1), &req)
+    }
+
+    #[test]
+    fn read_only_mode_lists_get_set_tools_as_reads() {
+        let ro = server(true);
+        let rw = server(false);
+        for name in READS_ONLY {
+            let tool = listed(&ro, name);
+            assert!(
+                tool["inputSchema"]["properties"].get("value").is_none(),
+                "{name} must not offer `value` read-only"
+            );
+            assert_eq!(tool["annotations"]["readOnlyHint"], true, "{name}");
+
+            let tool = listed(&rw, name);
+            assert!(
+                tool["inputSchema"]["properties"].get("value").is_some(),
+                "{name} must offer `value` read-write"
+            );
+            assert_eq!(tool["annotations"]["readOnlyHint"], false, "{name}");
+        }
+    }
+
+    #[test]
+    fn read_only_mode_refuses_a_set_through_a_get_set_tool() {
+        // Null too: the tools treat the key's presence as a set.
+        for value in [json!("x"), Value::Null] {
+            for name in READS_ONLY {
+                let args = json!({ "name": "App.kX", "location": "App", "value": value });
+                let err = call(&server(true), name, args)
+                    .error
+                    .unwrap_or_else(|| panic!("{name} set with {value} should be refused"));
+                assert_eq!(err.code, ErrorCode::InvalidRequest as i32);
+                assert!(err.message.contains("read-only"), "{}", err.message);
+            }
+        }
+    }
+
+    #[test]
+    fn read_only_mode_lets_a_get_through_a_get_set_tool() {
+        // No IDE: the get fails at the IDE layer, past the read-only gate.
+        for name in READS_ONLY {
+            let args = if *name == "get_item_description" {
+                json!({ "location": "App" })
+            } else {
+                json!({ "name": "App.kX" })
+            };
+            let resp = call(&server(true), name, args);
+            assert!(resp.error.is_none(), "{name}: {:?}", resp.error);
+        }
     }
 }

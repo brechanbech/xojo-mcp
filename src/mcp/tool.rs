@@ -92,6 +92,19 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// Arguments whose presence turns a call into a write. A get/set tool that
+    /// reads when an argument is omitted and writes when it is given names that
+    /// argument here instead of overriding `mutates()`. Read-only mode then lists
+    /// the tool without these arguments and refuses any call that passes one, so
+    /// the read half stays available.
+    ///
+    /// The server checks for the key, null or not, so `run` must decide on
+    /// exactly that too (`args.contains_key`). A looser test in `run` would let
+    /// a write through the gate.
+    fn write_args(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// The MCP behaviour hints sent with this tool in `tools/list`. There is no
     /// default: every tool states them, because a client falls back to the
     /// spec's defaults -- destructive and open-world -- for any it leaves out.
@@ -232,13 +245,20 @@ pub fn validate_arguments(tool: &dyn Tool, args: &HashMap<String, Value>) -> Res
 }
 
 /// Serialize a tool's metadata to the JSON schema MCP expects.
-pub fn tool_to_json(tool: &dyn Tool) -> Value {
+/// The `tools/list` entry for `tool`. With `read_only`, a tool that has
+/// `write_args` is described as the read-only form it is limited to: those
+/// arguments are left out of its schema and it is hinted read-only.
+pub fn tool_to_json(tool: &dyn Tool, read_only: bool) -> Value {
     let params = tool.parameters();
+    let reads_only = read_only && !tool.write_args().is_empty();
 
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
 
     for param in params {
+        if reads_only && tool.write_args().contains(&param.name) {
+            continue;
+        }
         let mut prop = serde_json::Map::new();
         prop.insert(
             "type".into(),
@@ -258,7 +278,11 @@ pub fn tool_to_json(tool: &dyn Tool) -> Value {
         }
     }
 
-    let annotations = tool.annotations();
+    let annotations = if reads_only {
+        ToolAnnotations::read_only(tool.annotations().title)
+    } else {
+        tool.annotations()
+    };
     serde_json::json!({
         "name": tool.name(),
         "title": annotations.title,

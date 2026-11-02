@@ -25,15 +25,16 @@ const SUPPORTED: &[&str] = &["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-
 const MUTATING: &[&str] = &[
     "set_code",
     "edit_code",
-    "property_value",
-    "constant_value",
-    "get_item_description",
     "set_declaration",
     "set_selected_text",
     "create_project_item",
     "revert_project",
     "save_project",
+    "run_ide_script",
 ];
+
+/// The get/set tools read-only mode keeps, limited to reading.
+const READS_ONLY: &[&str] = &["property_value", "constant_value", "get_item_description"];
 
 /// A live `xmcp` child speaking JSON-RPC over stdio.
 struct Server {
@@ -304,12 +305,12 @@ fn read_tools_are_hinted_read_only_and_writes_are_not() {
         assert_eq!(hint(tool), true, "{tool} should be read-only");
     }
     // get_debug_log is not: its `clear` deletes the log file.
-    for tool in MUTATING.iter().chain(&[
-        "run_project",
-        "build_project",
-        "run_ide_script",
-        "get_debug_log",
-    ]) {
+    for tool in
+        MUTATING
+            .iter()
+            .chain(READS_ONLY)
+            .chain(&["run_project", "build_project", "get_debug_log"])
+    {
         assert_eq!(hint(tool), false, "{tool} should not be read-only");
     }
 }
@@ -328,6 +329,35 @@ fn read_only_mode_hides_the_mutating_tools() {
     assert!(
         names.contains(&"get_code".to_string()),
         "read tools must still be listed"
+    );
+}
+
+#[test]
+fn read_only_mode_keeps_only_the_read_of_a_get_set_tool() {
+    let mut server = Server::start_with_env(&[("XMCP_READ_ONLY", "1")]);
+    server.handshake(PREFERRED);
+
+    let response = server.request("tools/list", json!({}));
+    let tools = response["result"]["tools"].as_array().unwrap().clone();
+    for name in READS_ONLY {
+        let tool = tools
+            .iter()
+            .find(|t| t["name"] == *name)
+            .unwrap_or_else(|| panic!("{name} must stay listed"));
+        assert!(
+            tool["inputSchema"]["properties"].get("value").is_none(),
+            "{name} must not offer `value`: {tool}"
+        );
+        assert_eq!(tool["annotations"]["readOnlyHint"], true, "{name}");
+    }
+
+    let response = server.request(
+        "tools/call",
+        json!({ "name": "constant_value", "arguments": { "name": "App.kX", "value": "1" } }),
+    );
+    assert_eq!(
+        response["error"]["code"], -32600,
+        "a set must be refused: {response}"
     );
 }
 
