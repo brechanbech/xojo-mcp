@@ -8,6 +8,8 @@ repository = "https://codeberg.org/brechanbech/xojo-mcp"
 readme = "README.md"
 keywords = ["mcp", "xojo", "ai", "claude", "ide"]
 categories = ["development-tools", "command-line-utilities"]
+# Maintainer notes, not useful to anyone installing the crate.
+exclude = ["RELEASING.md"]
 
 # Crate renamed from `xmcp` to `xojo-mcp` (X's own XMCP framework clashed with
 # the original Xojo XMCP this is a port of). The binary stays `xmcp` to avoid
