@@ -355,6 +355,7 @@ mod tests {
         "create_project_item",
         "revert_project",
         "save_project",
+        "run_ide_script",
     ];
 
     fn server(read_only: bool) -> Server {

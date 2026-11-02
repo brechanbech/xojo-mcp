@@ -835,6 +835,11 @@ impl Tool for RunIdeScript {
     fn annotations(&self) -> ToolAnnotations {
         ToolAnnotations::writes("Run IDE Script", true, false).open_world()
     }
+    // An IDE script can set Text, save, create items and run shell commands,
+    // so read-only mode must block it along with the dedicated write tools.
+    fn mutates(&self) -> bool {
+        true
+    }
     fn description(&self) -> &'static str {
         "Executes an arbitrary Xojo IDE script. Use Print to return a value, once: \
          with several Prints the first that says something is returned, and an error \

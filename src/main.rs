@@ -21,9 +21,10 @@ struct Cli {
     #[arg(short, long)]
     docs_path: Option<PathBuf>,
 
-    /// Read-only mode: hide and reject all tools that modify the project
-    /// (set_code, set_selected_text, create_project_item, revert_project,
-    /// save_project). Can also be enabled by setting XMCP_READ_ONLY=1.
+    /// Read-only mode: hide and reject the tools that can modify the project
+    /// (the code and declaration editors, create_project_item, the property,
+    /// constant and description setters, revert_project, save_project and
+    /// run_ide_script). Can also be enabled by setting XMCP_READ_ONLY=1.
     #[arg(long)]
     read_only: bool,
 }

@@ -276,7 +276,7 @@ flag or environment variable.)
 
 ### What it actually blocks
 
-Read-only mode disables the ten tools that modify the project:
+Read-only mode blocks the eleven tools that can modify the project:
 
 | Tool | What it would otherwise do |
 | --- | --- |
@@ -290,9 +290,16 @@ Read-only mode disables the ten tools that modify the project:
 | `get_item_description` | Change an item's description |
 | `revert_project` | Discard unsaved changes back to the last save |
 | `save_project` | Write the project's current in-memory state to disk |
+| `run_ide_script` | Run an arbitrary IDE script, which can do any of the above and more |
 
 `property_value`, `constant_value` and `get_item_description` also *read*, but each
 is one tool, so read-only mode blocks the read along with the write.
+
+`run_ide_script` is blocked for the same reason, although it is often used just to read. An
+IDE script can set an item's code, save, create items and run shell commands through
+`DoShellCommand`. The server can't tell a script that only reads from one that writes, so
+read-only mode blocks the tool. Use the dedicated read tools instead, such as
+`list_project_items`, `get_code` and `get_project_info`.
 
 ### Tool annotations
 
@@ -323,11 +330,11 @@ The restriction is applied in two independent layers, so it holds even if a
 client or model misbehaves:
 
 1. **The blocked tools are removed from the tool list.** When the assistant asks
-   the server what tools exist (`tools/list`), the six mutating tools are
+   the server what tools exist (`tools/list`), the eleven blocked tools are
    filtered out. The model never sees them, so it cannot choose to call
    something it does not know exists. This is what makes the mode effective in
    practice rather than merely defensive.
-2. **Any call to a blocked tool is rejected.** If a request to one of the six
+2. **Any call to a blocked tool is rejected.** If a request to one of the eleven
    arrives anyway — a stale tool list, a hand-crafted call, a buggy client — the
    server refuses it before the request ever reaches the IDE, returning a clear
    error explaining that the tool is disabled in read-only mode.
