@@ -108,7 +108,7 @@ xmcp --help
 ```
 
 **Optional:** `usage-guide.md` is embedded into the binary at compile
-time, so the MCP resource is always available out of the box. If the user wants to tweak the guide without rebuilding, a copy can be copied next to the same location as the binary — xmcp will prefer the file on disk over the embedded fallback:
+time, so the MCP resource is always available out of the box. If the user wants to tweak the guide without rebuilding, a copy can be placed next to the binary — xmcp will prefer the file on disk over the embedded fallback:
 
 ```sh
 cp usage-guide.md ~/.cargo/bin/
@@ -193,7 +193,7 @@ xmcp --docs-path /path/to/docs
 
 ## Read-only mode
 
-By default, an assistant connected to xmcp can change the users project: it can rewrite code, create new items, save, and revert. That is the point of the tool— but it is not always what the user might want. If the user only wants an assistant to *look at* a project — read the code, build it, run it, analyse it, answer questions, consult the documentation — without any possibility of it modifying or overwriting source files, the server must be started in **read-only mode**.
+By default, an assistant connected to xmcp can change the user's project: it can rewrite code, create new items, save, and revert. That is the point of the tool — but it is not always what the user might want. If the user only wants an assistant to *look at* a project — read the code, build it, run it, analyse it, answer questions, consult the documentation — without any possibility of it modifying or overwriting source files, the server must be started in **read-only mode**.
 
 Read-only mode is enforced by the server itself, not by asking the assistant to behave. It is the single most important safety control in xmcp.
 
@@ -219,7 +219,7 @@ Or, in a Claude Code settings file (`~/.claude/settings.json`, or the project-le
 }
 ```
 
-If the users MCP client prefers environment variables to command-line arguments, the variable `XMCP_READ_ONLY=1` does exactly the same thing. Accepted truthy values are `1`, `true`, `yes`, and `on` (case-insensitive):
+If the user's MCP client prefers environment variables to command-line arguments, the variable `XMCP_READ_ONLY=1` does exactly the same thing. Accepted truthy values are `1`, `true`, `yes`, and `on` (case-insensitive):
 
 ```json
 {
@@ -237,7 +237,7 @@ If both the flag and the environment variable are present, either one enabling r
 
 ### Read-only mode is set at launch, not in the conversation
 
-Read-only mode is a property of *how the server was started*. The user sets it once, in the users MCP client configuration, before the session begins. From that point on, for the entire lifetime of that server process, the restriction holds
+Read-only mode is a property of *how the server was started*. The user sets it once, in the user's MCP client configuration, before the session begins. From that point on, for the entire lifetime of that server process, the restriction holds
 regardless of anything typed into the conversation. Neither the user nor the assistant can toggle it mid-session; to change modes the user changes the configuration and reconnects the server. (Restarting the server is required for a change to take effect — a server that is already running will not pick up a changed flag or environment variable.)
 
 ### What Read-only mode blocks
@@ -293,7 +293,7 @@ stopping, compile-checking (`analyze_project`), inspecting descriptions and
 constants, the debug log tools, and all three documentation tools. In short:
 browse, build, run, and analyse — just no writing.
 
-Note that build and run are deliberately *not* blocked. They do not alter source files; they exercise it. `build_project` writes a compiled app into the build folder and `run_project` launches a debug session, but neither touches the
+Note that build and run are deliberately *not* blocked. They do not alter source files; they exercise them. `build_project` writes a compiled app into the build folder and `run_project` launches a debug session, but neither touches the
 project itself, so both are considered read-only-safe.
 
 ### How the enforcement works
