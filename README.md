@@ -258,15 +258,7 @@ read-only mode is enough — there is no way to *disable* it from the other.
 
 ### It is set at launch, not in the conversation
 
-This is the part newcomers most often get wrong. **You do not put the assistant
-into read-only mode by telling it to "stick to reading" in the chat.** A prompt
-is a request the model can forget, misinterpret, or be argued out of — and it
-does nothing at all if the model simply calls a write tool anyway. That is the
-weakness read-only mode exists to remove.
-
-Read-only mode is a property of *how the server was started*. You set it once,
-in your MCP client's configuration, before the session begins. From that point
-on, for the entire lifetime of that server process, the restriction holds
+Read-only mode is a property of *how the server was started*. You set it once, in your MCP client's configuration, before the session begins. From that point on, for the entire lifetime of that server process, the restriction holds
 regardless of anything typed into the conversation. Neither you nor the
 assistant can toggle it mid-session; to change modes you change the
 configuration and reconnect the server. (Restarting the server is required for a
