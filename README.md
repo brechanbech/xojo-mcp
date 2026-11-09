@@ -42,7 +42,7 @@ Each release carries an `aarch64-apple-darwin` tarball that is signed with a
 Developer ID certificate, notarized by Apple, and accompanied by a detached
 [minisign](https://jedisct1.github.io/minisign/) signature. Grab the latest from
 [Releases](https://codeberg.org/brechanbech/xojo-mcp/releases), check it, and put
-the binary on your `PATH`:
+the binary on `PATH`:
 
 ```sh
 minisign -Vm xmcp-*-aarch64-apple-darwin.tar.gz \
@@ -51,9 +51,7 @@ tar xzf xmcp-*-aarch64-apple-darwin.tar.gz
 install -m 755 xmcp-*/xmcp ~/.cargo/bin/xmcp
 ```
 
-The `.minisig` is the check worth doing, and the one the `.sha256` beside it
-cannot do: a checksum file hosted next to the file it vouches for proves only
-that the download wasn't corrupted, since anyone able to replace one asset can
+The `.minisig` is the check worth doing, and the one the `.sha256` beside it cannot do: a checksum file hosted next to the file it vouches for proves only that the download wasn't corrupted, since anyone able to replace one asset can
 replace both. The signature is made by a key that never touches the release
 server — the one in the command above, kept in this repository as
 `minisign.pub`.
@@ -66,17 +64,14 @@ the trusted comment, which names the version and the date it was signed. The
 shasum -a 256 -c xmcp-*-aarch64-apple-darwin.tar.gz.sha256
 ```
 
-The binary is signed with a Developer ID certificate and notarized by Apple, so
-Gatekeeper lets it run as-is. Check that for yourself if you like:
+The binary is signed with a Developer ID certificate and notarized by Apple, so Gatekeeper lets it run as-is. Check this with:
 
 ```sh
 codesign -dvv ~/.cargo/bin/xmcp   # Authority: Developer ID Application …
 codesign -vvv -R="notarized" --check-notarization ~/.cargo/bin/xmcp
 ```
 
-(`spctl` is the obvious thing to reach for and the wrong tool here: it answers
-`does not seem to be an app` for any plain command-line binary, notarized or
-not.)
+(The `spctl` command is the wrong tool: it answers `does not seem to be an app` for any plain command-line binary, notarized or not.)
 
 A notarization ticket cannot be stapled to a bare executable — `stapler` only
 handles `.app`, `.dmg` and `.pkg` — so the *first* run needs to reach Apple to
@@ -87,7 +82,7 @@ quarantine flag by hand instead:
 xattr -d com.apple.quarantine ~/.cargo/bin/xmcp
 ```
 
-Intel Macs are not covered — build from source instead.
+Intel Macs are not covered — the user must build from source.
 
 #### Option B: from crates.io
 
@@ -106,17 +101,14 @@ cargo install --path .
 ```
 
 This installs the `xmcp` binary to `~/.cargo/bin/xmcp`. If `~/.cargo/bin`
-is already on your `PATH` (the Rust installer adds it by default), you're
-done. Verify with:
+is already on `PATH` (the Rust installer adds it by default), the installation is complete. Verify with:
 
 ```sh
 xmcp --help
 ```
 
 **Optional:** `usage-guide.md` is embedded into the binary at compile
-time, so the MCP resource is always available out of the box. If you
-want to tweak the guide without rebuilding, drop a copy next to the
-binary — xmcp will prefer the file on disk over the embedded fallback:
+time, so the MCP resource is always available out of the box. If the user wants to tweak the guide without rebuilding, a copy can be copied next to the same location as the binary — xmcp will prefer the file on disk over the embedded fallback:
 
 ```sh
 cp usage-guide.md ~/.cargo/bin/
@@ -130,8 +122,7 @@ Run this from any terminal:
 claude mcp add xmcp -- xmcp
 ```
 
-Or add it manually to your Claude Code settings. Open the MCP config file
-(on macOS: `~/.claude/settings.json` or the project-level
+Or add it manually to Claude Code settings. Open the MCP config file (on macOS: `~/.claude/settings.json` or the project-level
 `.claude/settings.json`) and add:
 
 ```json
@@ -145,8 +136,7 @@ Or add it manually to your Claude Code settings. Open the MCP config file
 }
 ```
 
-To enable verbose logging (written to stderr, visible in the Claude Code
-MCP log):
+To enable verbose logging (written to stderr, visible in the Claude Code MCP log):
 
 ```json
 {
@@ -161,7 +151,7 @@ MCP log):
 
 ### 3. Use it
 
-1. Start the Xojo IDE and open your project
+1. Start the Xojo IDE and open a project
 2. Start a Claude Code session in the project directory
 3. Claude will automatically discover the 31 xmcp tools and the usage guide
 
@@ -203,28 +193,20 @@ xmcp --docs-path /path/to/docs
 
 ## Read-only mode
 
-By default, an assistant connected to xmcp can change your project: it can
-rewrite code, create new items, save, and revert. That is the point of the tool
-— but it is not always what you want. If you only want an assistant to *look
-at* a project — read the code, build it, run it, analyse it, answer questions,
-consult the documentation — without any possibility of it modifying or
-overwriting your source, start the server in **read-only mode**.
+By default, an assistant connected to xmcp can change the users project: it can rewrite code, create new items, save, and revert. That is the point of the tool— but it is not always what the user might want. If the user only wants an assistant to *look at* a project — read the code, build it, run it, analyse it, answer questions, consult the documentation — without any possibility of it modifying or overwriting source files, the server must be started in **read-only mode**.
 
-Read-only mode is enforced by the server itself, not by asking the assistant to
-behave. It is the single most important safety control in xmcp, so it is worth
-understanding exactly how it works.
+Read-only mode is enforced by the server itself, not by asking the assistant to behave. It is the single most important safety control in xmcp.
 
 ### Enabling it
 
-The simplest way is the `--read-only` flag on the launch command. In Claude
+The simplest way to enable read-only mode is to set the `--read-only` flag on the launch command. In Claude
 Code:
 
 ```sh
 claude mcp add xmcp -- xmcp --read-only
 ```
 
-Or, in a Claude Code settings file (`~/.claude/settings.json`, or the
-project-level `.claude/settings.json`):
+Or, in a Claude Code settings file (`~/.claude/settings.json`, or the project-level `.claude/settings.json`):
 
 ```json
 {
@@ -237,9 +219,7 @@ project-level `.claude/settings.json`):
 }
 ```
 
-If your MCP client prefers environment variables to command-line arguments, the
-variable `XMCP_READ_ONLY=1` does exactly the same thing. Accepted truthy values
-are `1`, `true`, `yes`, and `on` (case-insensitive):
+If the users MCP client prefers environment variables to command-line arguments, the variable `XMCP_READ_ONLY=1` does exactly the same thing. Accepted truthy values are `1`, `true`, `yes`, and `on` (case-insensitive):
 
 ```json
 {
@@ -253,19 +233,14 @@ are `1`, `true`, `yes`, and `on` (case-insensitive):
 }
 ```
 
-If both the flag and the environment variable are present, either one enabling
-read-only mode is enough — there is no way to *disable* it from the other.
+If both the flag and the environment variable are present, either one enabling read-only mode is enough — there is no way to *disable* it from the other.
 
-### It is set at launch, not in the conversation
+### Read-only mode is set at launch, not in the conversation
 
-Read-only mode is a property of *how the server was started*. You set it once, in your MCP client's configuration, before the session begins. From that point on, for the entire lifetime of that server process, the restriction holds
-regardless of anything typed into the conversation. Neither you nor the
-assistant can toggle it mid-session; to change modes you change the
-configuration and reconnect the server. (Restarting the server is required for a
-change to take effect — a server that is already running will not pick up a new
-flag or environment variable.)
+Read-only mode is a property of *how the server was started*. The user sets it once, in the users MCP client configuration, before the session begins. From that point on, for the entire lifetime of that server process, the restriction holds
+regardless of anything typed into the conversation. Neither the user nor the assistant can toggle it mid-session; to change modes the user changes the configuration and reconnects the server. (Restarting the server is required for a change to take effect — a server that is already running will not pick up a changed flag or environment variable.)
 
-### What it actually blocks
+### What Read-only mode blocks
 
 Read-only mode blocks the eight tools that can modify the project:
 
@@ -318,9 +293,7 @@ stopping, compile-checking (`analyze_project`), inspecting descriptions and
 constants, the debug log tools, and all three documentation tools. In short:
 browse, build, run, and analyse — just no writing.
 
-Note that build and run are deliberately *not* blocked. They do not alter your
-source; they exercise it. `build_project` writes a compiled app into the build
-folder and `run_project` launches a debug session, but neither touches the
+Note that build and run are deliberately *not* blocked. They do not alter source files; they exercise it. `build_project` writes a compiled app into the build folder and `run_project` launches a debug session, but neither touches the
 project itself, so both are considered read-only-safe.
 
 ### How the enforcement works
@@ -346,10 +319,7 @@ within the available tools rather than trying to route around the restriction.
 
 ### Running both modes at once
 
-Because the mode is fixed per server, you can register xmcp twice under
-different names and choose per task which one to point the assistant at — for
-example a normal `xmcp` for editing sessions and a separate `xmcp-ro` for
-review-only sessions:
+Because the mode is fixed per server, the user can register xmcp twice under different names and choose per task which one to point the assistant at — for example a normal `xmcp` for editing sessions and a separate `xmcp-ro` for review-only sessions:
 
 ```sh
 claude mcp add xmcp    -- xmcp
@@ -358,18 +328,13 @@ claude mcp add xmcp-ro -- xmcp --read-only
 
 ## Choosing which IDE to talk to
 
-The IDE listens on a socket whose path is a temporary directory plus the name
-`XojoIDE` — or the value of `XOJO_IPCPATH`, when that variable is set in the
-IDE's environment. Setting it to a unique name per instance is Xojo's supported
-way of running several IDEs (say, two releases side by side) and addressing each
-one independently:
+The IDE listens on a socket whose path is a temporary directory plus the name `XojoIDE` — or the value of `XOJO_IPCPATH`, when that variable is set in the IDE's environment. Setting it to a unique name per instance is Xojo's supported way of running several IDEs (say, two releases side by side) and addressing each one independently:
 
 ```sh
 env XOJO_IPCPATH=Xojo2026r2_1 "/Applications/Xojo 2026 Release 2.1/Xojo.app/Contents/MacOS/Xojo" &
 ```
 
-xmcp must be given the same value, otherwise it connects to whichever instance
-owns the default `XojoIDE` socket:
+xmcp must be given the same value, otherwise it connects to whichever instance owns the default `XojoIDE` socket:
 
 ```json
 {
@@ -388,7 +353,7 @@ containing anything else (with a warning on stderr) and falls back to `XojoIDE`.
 Candidate directories are `/tmp` first — what the IDE itself prefers — then
 `$TMPDIR`, which is where the IDE falls back when `/tmp` is not writable.
 
-If you only ever run one IDE at a time, ignore all of this: the default works.
+None of this applies if the user only ever runs one IDE at a time: the default works.
 
 ## Requirements
 
