@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::ide::communicator::{Communicator, DO_NOT_QUIT};
 use crate::mcp::tool::*;
 use crate::tools::*;
 
@@ -209,9 +210,11 @@ impl Tool for AgenticRun {
          XojoRunProject.txt into the project folder and reads back XojoCompileErrors.txt. \
          Compile errors fail the call, one '<location>, line <n>: <message>' per line. A \
          successful run launches the app in the debugger; stop it with stop_project. If Xojo \
-         has not taken the request within 10 seconds, Agentic Mode is off or the project is \
-         not open: the request file is removed again and the call fails saying how to turn \
-         the mode on. Agentic Mode is the user's opt-in to having the project run to check \
+         has not taken the request within 10 seconds, Agentic Mode is off, the project is \
+         not open, or something holds the IDE's scripting connection: the request file is \
+         removed again and the call fails saying how to turn the mode on. While an earlier \
+         IDE request is still unanswered (a build, or a dialog waiting for a click), Xojo \
+         2026r3.1+ pauses Agentic Mode, so the call fails at once instead. Agentic Mode is the user's opt-in to having the project run to check \
          edits, so this may be called without asking each time."
     }
     fn parameters(&self) -> &[ToolParam] {
@@ -235,6 +238,20 @@ impl Tool for AgenticRun {
         P
     }
     fn run(&self, args: &HashMap<String, Value>, ctx: &ToolContext) -> ToolResult {
+        // Checked before anything else: with project_dir omitted, the socket
+        // call below would be refused for the same reason, and its advice to
+        // pass project_dir would not help, since the open connection blocks
+        // the file protocol too.
+        if let Some(summary) = ctx.ide.and_then(Communicator::unfinished_requests) {
+            return ToolResult::failure(format!(
+                "Not run: the Xojo IDE has not finished answering an earlier request:\n\
+                 {summary}\nWhile that request's connection is open, Xojo (2026r3.1 and \
+                 later) pauses Agentic Mode: it neither reloads edited files nor takes a run \
+                 request. Usually a build, or a dialog in the IDE waiting for a click, is \
+                 holding it up. Once it finishes, Xojo reloads the files edited in the \
+                 meantime and agentic_run works again. {DO_NOT_QUIT}"
+            ));
+        }
         let dir = match resolve_project_dir(args, ctx) {
             Ok(d) => d,
             Err(r) => return r,
@@ -247,8 +264,10 @@ impl Tool for AgenticRun {
             }
             Ok(RunOutcome::NotPickedUp) => ToolResult::failure(format!(
                 "Xojo did not pick up {RUN_TRIGGER} within {} s, so Agentic Mode is not \
-                 on for this project, the project is not open, or the IDE is busy. \
-                 Turn it on with File > Agentic Mode (Xojo 2026r3+), or use run_project.",
+                 on for this project, the project is not open, or the IDE is busy. Another \
+                 program connected to the IDE's scripting socket also blocks it: Xojo \
+                 2026r3.1 and later pause Agentic Mode while any such connection is open. \
+                 Turn the mode on with File > Agentic Mode (Xojo 2026r3+), or use run_project.",
                 PICKUP_BUDGET.as_secs()
             )),
             Ok(RunOutcome::Errors(raw)) => ToolResult::failure(format_compile_errors(&raw)),

@@ -338,7 +338,7 @@ order. Kinds not listed are not checked.
 In Agentic Mode (File > Agentic Mode in Xojo 2026r3 and later) the IDE watches
 the project folder and reloads any file that changes on disk. `get_project_info`
 reports `Agentic Mode: on` when the saved project has it enabled. The rules
-change in four ways:
+change in five ways:
 
 - **No `revert_project` after a file edit.** The reload happens by itself,
   within a few seconds. Do not call `revert_project` for it.
@@ -362,6 +362,13 @@ change in four ways:
   the method body, and control events are named without the `Controls` segment
   (`Window1.Button1.Pressed`), which the IDE tools need
   (`Window1.Controls.Button1.Pressed`).
+- **An unfinished IDE request pauses Agentic Mode (Xojo 2026r3.1+).** While
+  a connection to the IDE's scripting socket is open, Xojo neither reloads
+  edited files nor takes a run request. xmcp holds a connection open only
+  while the IDE still owes it an answer (a long build, or a dialog waiting for
+  a click), and `agentic_run` then fails at once and says so. Disk edits made
+  meanwhile are not lost: Xojo reloads them once the connection closes.
+  Verified on 2026r3.1.
 - **New project items still go through the IDE.** Xojo's own `XOJO-CODING.md`
   tells agents to add new items to the `.xojo_project` manifest by hand. Don't:
   use `create_project_item`, which lets the IDE assign the item's ID. The rule

@@ -28,7 +28,7 @@ const QUIET_AFTER_ANSWER: Duration = Duration::from_millis(250);
 const PENDING_GIVE_UP: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// Said with every message about a request the IDE still owes an answer to.
-const DO_NOT_QUIT: &str = "Do not quit or restart Claude Code (or whichever MCP client you \
+pub const DO_NOT_QUIT: &str = "Do not quit or restart Claude Code (or whichever MCP client you \
     use) until then: quitting closes this connection, and on macOS the Xojo IDE crashes if \
     it answers over a connection that has been closed.";
 
@@ -372,6 +372,14 @@ impl Communicator {
                 .collect::<Vec<_>>()
                 .join("\n"),
         )
+    }
+
+    /// The requests the IDE has still not finished answering, one line each,
+    /// or `None` if there are none. Each one holds its connection open, and
+    /// from Xojo 2026r3.1 an open connection pauses Agentic Mode: the IDE
+    /// neither reloads edited files nor takes a run request until it closes.
+    pub fn unfinished_requests(&self) -> Option<String> {
+        self.drain_pending()
     }
 
     /// Keep a delivered request's connection open until the IDE has answered.
@@ -823,6 +831,17 @@ mod tests {
         );
         assert!(err.contains("Do not quit"), "{err}");
         assert_eq!(c.pending().len(), 1, "refusing must not release it");
+    }
+
+    #[test]
+    fn unfinished_requests_names_a_parked_request_until_it_is_answered() {
+        let (c, mut ide) = parked("DoCommand \"BuildApp\"");
+        let summary = c.unfinished_requests().expect("still owed");
+        assert!(summary.contains("xmcp_7"), "{summary}");
+        assert!(summary.contains("BuildApp"), "{summary}");
+        assert_eq!(c.pending().len(), 1, "asking must not release it");
+        frame(&mut ide, r#"{"tag":"xmcp_7","response":"xmcp-end:xmcp_7"}"#);
+        assert!(c.unfinished_requests().is_none());
     }
 
     #[test]
